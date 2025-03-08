@@ -124,3 +124,87 @@
     @apply bg-background text-foreground;
   }
 }
+
+@property --magic-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.magic-gradient {
+  --magic-angle: 0deg;
+  background: linear-gradient(
+    var(--magic-angle),
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.15)
+  );
+  animation: rotate 8s linear infinite;
+}
+
+@keyframes rotate {
+  to {
+    --magic-angle: 360deg;
+  }
+}
+
+@keyframes gradient-rotate {
+  0% {
+    --magic-angle: 0deg;
+  }
+  100% {
+    --magic-angle: 360deg;
+  }
+}
+
+.animate-gradient-rotate {
+  animation: gradient-rotate 3s linear infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes glow {
+  0%, 100% {
+    filter: brightness(100%) blur(2px);
+  }
+  50% {
+    filter: brightness(150%) blur(4px);
+  }
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+@keyframes gradient-conic {
+  from {
+    --gradient-angle: 0deg;
+  }
+  to {
+    --gradient-angle: 360deg;
+  }
+}
+
+.bg-gradient-conic {
+  background-image: conic-gradient(
+    from var(--gradient-angle),
+    var(--gradient-stops)
+  );
+}
+
+@font-face {
+  font-family: 'FKRasterGrotesk';
+  src: url('/fonts/FKRasterGrotesk-Smooth.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
