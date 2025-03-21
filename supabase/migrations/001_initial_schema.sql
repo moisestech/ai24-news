@@ -12,11 +12,13 @@ CREATE TABLE emails (
 CREATE TABLE news_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     headline TEXT NOT NULL,
-    source TEXT,
-    url TEXT,
+    source TEXT NOT NULL,
+    url TEXT NOT NULL,
     image_url TEXT,
+    art_style TEXT NOT NULL,    -- Store just the enum key (e.g., 'VanGogh')
     user_email TEXT REFERENCES emails(email),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    CONSTRAINT unique_headline_source UNIQUE (headline, source)
 );
 
 -- Rate limiting table (for Upstash backup/sync)
@@ -26,6 +28,10 @@ CREATE TABLE rate_limits (
     last_reset TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
--- Indexes
+-- Indexes for performance
+CREATE INDEX idx_news_history_created_at ON news_history(created_at);
 CREATE INDEX idx_news_history_user_email ON news_history(user_email);
-CREATE INDEX idx_news_history_created_at ON news_history(created_at); 
+
+-- Add unique constraint to existing table
+ALTER TABLE news_history
+ADD CONSTRAINT unique_headline_source UNIQUE (headline, source); 

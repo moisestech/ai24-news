@@ -1,5 +1,5 @@
 import { useAtom } from 'jotai'
-import { imageGenerationAtom, currentNewsAtom, userLimitAtom } from '../atoms'
+import { imageGenerationAtom, currentNewsAtom, userLimitAtom } from '../lib/atoms'
 
 export function useImageGeneration() {
   const [imageState, setImageState] = useAtom(imageGenerationAtom)

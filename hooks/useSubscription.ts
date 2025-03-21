@@ -1,7 +1,7 @@
 import { useAtom } from 'jotai'
-import { userEmailAtom } from '../atoms'
-import { SUBSCRIPTION_TIERS, SubscriptionTier } from '../constants/plans'
-import { subscriptionQueries } from '../supabase'
+import { userEmailAtom } from '../lib/atoms'
+import { SUBSCRIPTION_TIERS, SubscriptionTier } from '../lib/constants/plans'
+import { subscriptionQueries } from '../lib/supabase'
 
 type UsageCheckResult = {
   canGenerate: boolean

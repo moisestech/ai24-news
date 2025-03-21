@@ -43,18 +43,39 @@ export const emailQueries = {
 
 // News history related queries
 export const newsQueries = {
-  saveNewsToHistory: async (newsData: {
+  async getNewsById(id: string): Promise<NewsData | null> {
+    const { data, error } = await supabase
+      .from('news_history')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (error) throw error
+    return data as NewsData
+  },
+
+  async saveNewsToHistory(newsData: {
     headline: string
     source: string
     url: string
     image_url?: string
     user_email: string
-  }) => {
+  }) {
     const { data, error } = await supabase
       .from('news_history')
       .insert([newsData])
       .select()
       .single()
+
+    if (error) throw error
+    return data
+  },
+
+  async fetchNewsHistory() {
+    const { data, error } = await supabase
+      .from('news_history')
+      .select('*')
+      .order('created_at', { ascending: false })
 
     if (error) throw error
     return data
@@ -83,17 +104,6 @@ export const newsQueries = {
 
     if (error) throw error
     return data
-  },
-
-  async getNewsById(id: string): Promise<NewsData | null> {
-    const { data, error } = await supabase
-      .from('news_history')
-      .select('*')
-      .eq('id', id)
-      .single()
-
-    if (error) throw error
-    return data as NewsData
   }
 }
 

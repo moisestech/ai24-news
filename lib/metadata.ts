@@ -1,4 +1,5 @@
 import { Metadata } from 'next'
+import { siteConfig } from './config/metadata'
 
 interface SEOProps {
   title: string
@@ -13,24 +14,15 @@ export function generateSEO({
   imageUrl,
   type = 'website'
 }: SEOProps): Metadata {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://ai24.live'
-  
   return {
     title,
     description,
     openGraph: {
       title,
       description,
-      url: baseUrl,
-      siteName: 'AI24 Live News',
-      images: imageUrl ? [
-        {
-          url: imageUrl,
-          width: 1200,
-          height: 630,
-          alt: title
-        }
-      ] : undefined,
+      url: siteConfig.url,
+      siteName: siteConfig.name,
+      images: imageUrl ? [imageUrl] : undefined,
       type,
     },
     twitter: {

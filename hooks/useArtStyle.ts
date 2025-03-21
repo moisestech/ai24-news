@@ -1,6 +1,10 @@
 'use client'
 
-interface ArtStyle {
+import { ArtStyle } from '@/types/art'
+import type { ArtStyleKey } from '@/types/news'
+import { getArtStyleValue } from '@/lib/utils/art'
+
+interface ArtStyleConfig {
   id: string
   name: string
   prompt: string
@@ -8,7 +12,7 @@ interface ArtStyle {
   image?: string
 }
 
-const artStyles: ArtStyle[] = [
+const artStyles: ArtStyleConfig[] = [
   {
     id: 'style-van-gogh',
     name: 'Vincent Van Gogh',
@@ -36,13 +40,14 @@ const artStyles: ArtStyle[] = [
 ]
 
 export function useArtStyle() {
-  const getRandomStyle = () => {
-    const randomIndex = Math.floor(Math.random() * artStyles.length)
-    return artStyles[randomIndex]
+  const getRandomStyle = (): ArtStyleKey => {
+    const styles = Object.keys(ArtStyle) as ArtStyleKey[]
+    const randomIndex = Math.floor(Math.random() * styles.length)
+    return styles[randomIndex]
   }
 
   return {
-    artStyles,
-    getRandomStyle
+    getRandomStyle,
+    getArtStyleValue
   }
 } 

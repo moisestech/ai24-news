@@ -1,22 +1,65 @@
+import { devLog } from '@/lib/utils/log'
+import { fetchLatestNews } from '@/lib/news'
+
 export async function GET() {
   try {
-    const response = await fetch(`http://api.mediastack.com/v1/news`, {
-      headers: {
-        'Authorization': `Bearer ${process.env.MEDIASTACK_API_KEY}`
+    devLog('Starting news fetch from API', {
+      prefix: 'api:fetch-news',
+      level: 'info',
+      timestamp: true
+    })
+
+    devLog({
+      env: {
+        MEDIASTACK_API_KEY: process.env.MEDIASTACK_API_KEY ? 'Set' : 'Not set',
+        NODE_ENV: process.env.NODE_ENV,
       }
+    }, {
+      prefix: 'api:fetch-news',
+      level: 'debug'
     })
-    
-    if (!response.ok) throw new Error('Failed to fetch news')
-    
-    const data = await response.json()
-    // Process and return top headline
-    return Response.json({
-      headline: data.headlines[0].title,
-      source: data.headlines[0].source,
-      url: data.headlines[0].url
+
+    const news = await fetchLatestNews()
+
+    devLog('News fetch successful', {
+      prefix: 'api:fetch-news',
+      level: 'info',
+      timestamp: true
     })
-  } catch (err) {
-    console.error('News fetch failed:', err)
-    return Response.json({ error: 'Failed to fetch news' }, { status: 500 })
+
+    devLog({ news }, {
+      prefix: 'api:fetch-news',
+      level: 'debug'
+    })
+
+    return Response.json(news)
+  } catch (error) {
+    devLog('News fetch failed', {
+      prefix: 'api:fetch-news',
+      level: 'error',
+      timestamp: true
+    })
+
+    devLog({
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      env: {
+        MEDIASTACK_API_KEY: process.env.MEDIASTACK_API_KEY ? 'Set' : 'Not set',
+        NODE_ENV: process.env.NODE_ENV,
+      }
+    }, {
+      prefix: 'api:fetch-news',
+      level: 'error'
+    })
+
+    return Response.json(
+      {
+        error: 'Failed to fetch news',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      },
+      { status: 500 }
+    )
   }
 } 

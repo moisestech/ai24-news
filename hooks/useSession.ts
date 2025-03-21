@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useAtom } from 'jotai'
-import { userEmailAtom } from '../atoms'
-import { timeUtils } from '../utils/time'
+import { userEmailAtom } from '../lib/atoms'
+import { timeUtils } from '../lib/utils/time'
 
 const SESSION_KEY = 'ai_news_session'
 
