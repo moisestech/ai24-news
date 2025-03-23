@@ -1,28 +1,32 @@
 import { devLog } from '@/lib/utils/log'
 
 interface AudioContextState {
-  isInitialized: boolean
-  error: Error | null
-  activeConnections: Map<string, {
-    analyzer: AnalyserNode
-    dataArray: Uint8Array
+  context: AudioContext | null
+  gainNode: GainNode | null
+  activeConnections: Map<HTMLAudioElement, {
     source: MediaElementAudioSourceNode
     gainNode: GainNode
+    analyzer: AnalyserNode
   }>
+  isInitialized: boolean
 }
 
-class AudioContextManager {
+export class AudioContextManager {
   private static instance: AudioContextManager
-  private audioContext: AudioContext | null = null
-  private state: AudioContextState = {
-    isInitialized: false,
-    error: null,
-    activeConnections: new Map()
-  }
-  private elementUpdateCallbacks: Set<(element: HTMLAudioElement) => void> = new Set()
-  private initializationInProgress: Map<string, Promise<void>> = new Map()
+  private state: AudioContextState
+  private initializationInProgress: Set<HTMLAudioElement>
+  private cleanupTimeout: NodeJS.Timeout | null
 
-  private constructor() {}
+  private constructor() {
+    this.state = {
+      context: null,
+      gainNode: null,
+      activeConnections: new Map(),
+      isInitialized: false
+    }
+    this.initializationInProgress = new Set()
+    this.cleanupTimeout = null
+  }
 
   static getInstance(): AudioContextManager {
     if (!AudioContextManager.instance) {
@@ -31,283 +35,172 @@ class AudioContextManager {
     return AudioContextManager.instance
   }
 
-  async initialize(): Promise<void> {
-    if (this.audioContext) {
-      if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume()
-      }
-      return
+  async initialize(audioElement: HTMLAudioElement): Promise<{
+    context: AudioContext
+    gainNode: GainNode
+    analyzer: AnalyserNode
+  }> {
+    // Check if initialization is already in progress for this audio element
+    if (this.initializationInProgress.has(audioElement)) {
+      devLog('Initialization already in progress', {
+        prefix: 'audio-context',
+        level: 'debug'
+      })
+      return this.getExistingConnection(audioElement)
     }
 
     try {
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      
-      if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume()
+      this.initializationInProgress.add(audioElement)
+
+      // Create new AudioContext if needed
+      if (!this.state.context) {
+        this.state.context = new (window.AudioContext || (window as any).webkitAudioContext)()
+        devLog('AudioContext initialized', {
+          prefix: 'audio-context',
+          level: 'debug'
+        })
       }
 
-      this.state.isInitialized = true
-      this.state.error = null
+      // Create gain node
+      const gainNode = this.state.context.createGain()
+      gainNode.gain.value = 1.0
 
-      devLog('AudioContext initialized', {
-        prefix: 'audio-context',
-        level: 'info'
-      }, {
-        data: {
-          state: this.audioContext.state,
-          sampleRate: this.audioContext.sampleRate,
-          baseLatency: this.audioContext.baseLatency
-        }
+      // Create analyzer
+      const analyzer = this.state.context.createAnalyser()
+      analyzer.fftSize = 2048
+
+      // Create audio source
+      const source = this.state.context.createMediaElementSource(audioElement)
+
+      // Connect nodes
+      source.connect(gainNode)
+      gainNode.connect(analyzer)
+      analyzer.connect(this.state.context.destination)
+
+      // Store connection
+      this.state.activeConnections.set(audioElement, {
+        source,
+        gainNode,
+        analyzer
       })
+
+      devLog('Audio analyzer created successfully', {
+        prefix: 'audio-context',
+        level: 'debug'
+      })
+
+      return {
+        context: this.state.context,
+        gainNode,
+        analyzer
+      }
     } catch (error) {
-      this.state.error = error as Error
-      this.state.isInitialized = false
-      devLog('Failed to initialize AudioContext', {
+      devLog('Failed to initialize audio context', {
         prefix: 'audio-context',
         level: 'error'
       }, { error })
       throw error
+    } finally {
+      this.initializationInProgress.delete(audioElement)
     }
   }
 
-  async createAnalyzer(audioElement: HTMLAudioElement): Promise<{
-    analyzer: AnalyserNode
-    dataArray: Uint8Array
-  } | null> {
-    // Check if initialization is already in progress for this audio element
-    const existingInit = this.initializationInProgress.get(audioElement.src)
-    if (existingInit) {
-      devLog('Initialization already in progress', {
-        prefix: 'audio-context',
-        level: 'debug'
-      }, {
-        data: {
-          src: audioElement.src,
-          readyState: audioElement.readyState,
-          crossOrigin: audioElement.crossOrigin
-        }
-      })
-      await existingInit
-      const existingConnection = this.state.activeConnections.get(audioElement.src)
-      if (existingConnection) {
-        devLog('Using existing audio connection', {
-          prefix: 'audio-context',
-          level: 'debug'
-        }, {
-          data: {
-            src: audioElement.src,
-            hasAnalyzer: !!existingConnection.analyzer,
-            hasDataArray: !!existingConnection.dataArray
-          }
-        })
-        return {
-          analyzer: existingConnection.analyzer,
-          dataArray: existingConnection.dataArray
-        }
-      }
+  private getExistingConnection(audioElement: HTMLAudioElement) {
+    const connection = this.state.activeConnections.get(audioElement)
+    if (!connection) {
+      throw new Error('No existing connection found')
     }
-
-    // Create a new initialization promise
-    const initPromise = (async () => {
-      if (!this.audioContext) {
-        devLog('No audio context, initializing', {
-          prefix: 'audio-context',
-          level: 'debug'
-        })
-        await this.initialize()
-      }
-
-      if (!this.audioContext) {
-        this.state.error = new Error('Failed to initialize AudioContext')
-        devLog('Failed to initialize AudioContext', {
-          prefix: 'audio-context',
-          level: 'error'
-        })
-        return
-      }
-
-      try {
-        // Check for existing connection again after initialization
-        const existingConnection = this.state.activeConnections.get(audioElement.src)
-        if (existingConnection) {
-          devLog('Found existing connection after initialization', {
-            prefix: 'audio-context',
-            level: 'debug'
-          }, {
-            data: {
-              src: audioElement.src,
-              hasAnalyzer: !!existingConnection.analyzer,
-              hasDataArray: !!existingConnection.dataArray
-            }
-          })
-          return
-        }
-
-        devLog('Creating new audio connection', {
-          prefix: 'audio-context',
-          level: 'debug'
-        }, {
-          data: {
-            src: audioElement.src,
-            readyState: audioElement.readyState,
-            crossOrigin: audioElement.crossOrigin,
-            contextState: this.audioContext.state
-          }
-        })
-
-        // Create new connection
-        const source = this.audioContext.createMediaElementSource(audioElement)
-        const gainNode = this.audioContext.createGain()
-        const analyzer = this.audioContext.createAnalyser()
-        analyzer.fftSize = 256
-        const dataArray = new Uint8Array(analyzer.frequencyBinCount)
-
-        // Connect nodes
-        source.connect(gainNode)
-        gainNode.connect(analyzer)
-        analyzer.connect(this.audioContext.destination)
-
-        // Store connection
-        this.state.activeConnections.set(audioElement.src, {
-          analyzer,
-          dataArray,
-          source,
-          gainNode
-        })
-
-        devLog('Audio analyzer created successfully', {
-          prefix: 'audio-context',
-          level: 'info'
-        }, {
-          data: {
-            src: audioElement.src,
-            hasAnalyzer: !!analyzer,
-            hasDataArray: !!dataArray,
-            contextState: this.audioContext.state,
-            activeConnections: this.state.activeConnections.size
-          }
-        })
-
-        // Notify callbacks only after successful initialization
-        this.elementUpdateCallbacks.forEach(callback => callback(audioElement))
-      } catch (error) {
-        this.state.error = error as Error
-        devLog('Failed to create audio analyzer', {
-          prefix: 'audio-context',
-          level: 'error'
-        }, { 
-          error,
-          data: {
-            src: audioElement.src,
-            readyState: audioElement.readyState,
-            crossOrigin: audioElement.crossOrigin,
-            contextState: this.audioContext?.state
-          }
-        })
-        throw error
-      }
-    })()
-
-    // Store the initialization promise
-    this.initializationInProgress.set(audioElement.src, initPromise)
-
-    try {
-      await initPromise
-      const connection = this.state.activeConnections.get(audioElement.src)
-      if (connection) {
-        devLog('Audio analyzer initialization completed', {
-          prefix: 'audio-context',
-          level: 'info'
-        }, {
-          data: {
-            src: audioElement.src,
-            hasAnalyzer: !!connection.analyzer,
-            hasDataArray: !!connection.dataArray,
-            contextState: this.audioContext?.state
-          }
-        })
-        return {
-          analyzer: connection.analyzer,
-          dataArray: connection.dataArray
-        }
-      }
-      devLog('No connection found after initialization', {
-        prefix: 'audio-context',
-        level: 'error'
-      }, {
-        data: {
-          src: audioElement.src,
-          contextState: this.audioContext?.state
-        }
-      })
-      return null
-    } catch (error) {
-      this.initializationInProgress.delete(audioElement.src)
-      devLog('Initialization promise failed', {
-        prefix: 'audio-context',
-        level: 'error'
-      }, { 
-        error,
-        data: {
-          src: audioElement.src,
-          contextState: this.audioContext?.state
-        }
-      })
-      return null
+    return {
+      context: this.state.context!,
+      gainNode: connection.gainNode,
+      analyzer: connection.analyzer
     }
   }
 
-  cleanup(): void {
-    // Disconnect all active connections
-    this.state.activeConnections.forEach((connection, src) => {
+  cleanup(audioElement?: HTMLAudioElement): void {
+    // If no specific audio element is provided, cleanup everything
+    if (!audioElement) {
+      this.cleanupAll()
+      return
+    }
+
+    // Cleanup specific audio element connection
+    const connection = this.state.activeConnections.get(audioElement)
+    if (connection) {
       try {
         connection.source.disconnect()
         connection.gainNode.disconnect()
         connection.analyzer.disconnect()
-        this.state.activeConnections.delete(src)
-        this.initializationInProgress.delete(src)
+        this.state.activeConnections.delete(audioElement)
+        
+        devLog('Cleaned up audio connection', {
+          prefix: 'audio-context',
+          level: 'debug'
+        })
       } catch (error) {
-        devLog('Failed to disconnect audio connection', {
+        devLog('Failed to cleanup audio connection', {
           prefix: 'audio-context',
           level: 'error'
-        }, { error, src })
+        }, { error })
       }
-    })
-
-    // Close audio context
-    if (this.audioContext) {
-      this.audioContext.close()
-      this.audioContext = null
     }
 
-    // Reset state
-    this.state = {
-      isInitialized: false,
-      error: null,
-      activeConnections: new Map()
+    // If no more connections, cleanup context
+    if (this.state.activeConnections.size === 0) {
+      this.cleanupAll()
+    }
+  }
+
+  private cleanupAll(): void {
+    // Clear any pending cleanup timeout
+    if (this.cleanupTimeout) {
+      clearTimeout(this.cleanupTimeout)
+      this.cleanupTimeout = null
     }
 
-    // Clear callbacks and initialization tracking
-    this.elementUpdateCallbacks.clear()
-    this.initializationInProgress.clear()
+    // Schedule cleanup after a delay to prevent rapid cleanup cycles
+    this.cleanupTimeout = setTimeout(() => {
+      try {
+        // Disconnect all active connections
+        this.state.activeConnections.forEach((connection, src) => {
+          try {
+            connection.source.disconnect()
+            connection.gainNode.disconnect()
+            connection.analyzer.disconnect()
+            this.state.activeConnections.delete(src)
+          } catch (error) {
+            devLog('Failed to disconnect audio connection', {
+              prefix: 'audio-context',
+              level: 'error'
+            }, { error, src })
+          }
+        })
 
-    devLog('AudioContext cleaned up', {
-      prefix: 'audio-context',
-      level: 'info'
-    })
-  }
+        // Close and reset context
+        if (this.state.context) {
+          this.state.context.close()
+          this.state.context = null
+        }
 
-  onAudioElementUpdate(callback: (element: HTMLAudioElement) => void): void {
-    this.elementUpdateCallbacks.add(callback)
-  }
+        // Reset state
+        this.state.gainNode = null
+        this.state.isInitialized = false
+        this.initializationInProgress.clear()
 
-  removeAudioElementUpdateCallback(callback: (element: HTMLAudioElement) => void): void {
-    this.elementUpdateCallbacks.delete(callback)
+        devLog('AudioContext cleaned up', {
+          prefix: 'audio-context',
+          level: 'debug'
+        })
+      } catch (error) {
+        devLog('Failed to cleanup audio context', {
+          prefix: 'audio-context',
+          level: 'error'
+        }, { error })
+      }
+    }, 1000) // 1 second delay before cleanup
   }
 
   getState(): AudioContextState {
     return { ...this.state }
   }
-}
-
-export { AudioContextManager } 
+} 

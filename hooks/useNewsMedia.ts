@@ -5,6 +5,8 @@ import { devLog } from '@/lib/utils/log'
 import { useToast } from '@/hooks/use-toast'
 import { ArtStyle } from '@/types/art'
 import { audioService } from '@/lib/services/audio'
+import { promptService } from '@/lib/services/prompt'
+import { mediaService } from '@/lib/services/media'
 import { useArtStyle } from '@/hooks/useArtStyle'
 import type { AudioState, ImageState } from '@/types/news'
 import type { ArtStyleKey } from '@/types/art'
@@ -186,23 +188,26 @@ export function useNewsMedia({
           existingImage: state.image.url
         }
       })
-      
-      const response = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          headline,
-          style: displayStyle,
-          newsId: currentNews?.id // Pass the newsId if available
-        })
+
+      // Generate media using the media service
+      const result = await mediaService.generateMedia({
+        headline,
+        artStyle: artStyle,
+        newsId: currentNews?.id,
+        onProgress: (progress) => {
+          devLog('Media generation progress', {
+            prefix: 'news-media',
+            level: 'debug'
+          }, {
+            data: {
+              stage: progress.stage,
+              progress: progress.progress,
+              message: progress.message,
+              error: progress.error
+            }
+          })
+        }
       })
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.details || errorData.error || 'Failed to generate image')
-      }
-      
-      const data = await response.json()
       
       // Update image state with the new URL and style
       setState(prev => ({
@@ -210,14 +215,14 @@ export function useNewsMedia({
         image: {
           ...prev.image,
           isGenerating: false,
-          url: data.imageUrl,
+          url: result.imageUrl,
           artStyle
         }
       }))
 
       // Call onImageGenerated callback if provided
-      if (data.imageUrl && onImageGenerated) {
-        await onImageGenerated(data.imageUrl)
+      if (result.imageUrl && onImageGenerated) {
+        await onImageGenerated(result.imageUrl)
       }
       
     } catch (error) {
@@ -237,7 +242,7 @@ export function useNewsMedia({
         }
       }))
       
-      // Show toast for image generation failure
+      // Show toast for image generation failed
       toast({
         title: 'Image Generation Failed',
         description: errorMessage,
@@ -479,9 +484,102 @@ export function useNewsMedia({
     }
   }, [generateImage, generateAudio, state, isThrottled])
 
+  const debugPromptGeneration = useCallback(async () => {
+    try {
+      setState(prev => ({
+        ...prev,
+        image: {
+          ...prev.image,
+          isGenerating: true,
+          error: null
+        }
+      }))
+
+      // Use existing art style or get random one
+      const artStyle = state.image.artStyle || getRandomStyle()
+      
+      devLog('Debugging prompt generation', {
+        prefix: 'news-media',
+        level: 'debug'
+      }, {
+        data: {
+          headline,
+          artStyle,
+          currentState: state.image
+        }
+      })
+
+      // Generate prompt using prompt service
+      const promptResult = await promptService.generatePrompt({
+        headline,
+        artStyle: ArtStyle[artStyle]
+      })
+
+      devLog('Prompt generation result', {
+        prefix: 'news-media',
+        level: 'debug'
+      }, {
+        data: {
+          prompt: promptResult.prompt,
+          metadata: promptResult.metadata,
+          artStyle
+        }
+      })
+
+      // Show success toast with prompt details
+      toast({
+        title: 'Prompt Generated Successfully',
+        description: (
+          <div className="space-y-2">
+            <p className="font-medium">Prompt:</p>
+            <p className="text-sm">{promptResult.prompt}</p>
+            <p className="font-medium mt-2">Style Notes:</p>
+            <ul className="text-sm list-disc list-inside">
+              {promptResult.metadata.style_notes.map((note, i) => (
+                <li key={i}>{note}</li>
+              ))}
+            </ul>
+          </div>
+        )
+      })
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      
+      devLog('Prompt generation debug failed', {
+        prefix: 'news-media',
+        level: 'error'
+      }, { error })
+      
+      setState(prev => ({
+        ...prev,
+        image: {
+          ...prev.image,
+          isGenerating: false,
+          error: error instanceof Error ? error : new Error(errorMessage)
+        }
+      }))
+      
+      toast({
+        title: 'Prompt Generation Debug Failed',
+        description: errorMessage,
+        variant: 'destructive'
+      })
+    } finally {
+      setState(prev => ({
+        ...prev,
+        image: {
+          ...prev.image,
+          isGenerating: false
+        }
+      }))
+    }
+  }, [headline, state.image.artStyle, toast, getRandomStyle])
+
   return {
     state,
     generateMedia,
-    retryGeneration
+    retryGeneration,
+    debugPromptGeneration
   }
 } 

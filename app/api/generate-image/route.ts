@@ -31,10 +31,10 @@ if (process.env.UPSTASH_REDIS_REST_URL) {
 
 export async function POST(request: Request) {
   try {
-    const { headline, style, prompt, newsId } = await request.json()
+    const { headline, artStyle, prompt, newsId } = await request.json()
 
     // Validate required fields
-    if (!headline || !style || !prompt) {
+    if (!headline || !artStyle || !prompt) {
       return NextResponse.json(
         { details: 'Missing required fields' },
         { status: 400 }
@@ -42,13 +42,13 @@ export async function POST(request: Request) {
     }
 
     // Validate art style
-    if (!isValidArtStyle(style)) {
+    if (!isValidArtStyle(artStyle)) {
       devLog('Invalid art style received', {
         prefix: 'api:generate-image',
         level: 'error'
       }, {
         data: {
-          receivedStyle: style,
+          receivedArtStyle: artStyle,
           validStyles: Object.values(ArtStyle)
         }
       })
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     }
 
     // Convert style to proper format
-    const normalizedStyle = normalizeArtStyle(style) as ArtStyleKey
+    const normalizedArtStyle = normalizeArtStyle(artStyle) as ArtStyleKey
 
     devLog('Generating image', {
       prefix: 'api:generate-image',
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
     }, {
       data: {
         headline,
-        style: normalizedStyle,
+        artStyle: normalizedArtStyle,
         prompt,
         newsId
       }
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
     // Generate the image using the provided prompt
     const base64Image = await generateImage({
       prompt,
-      style: normalizedStyle,
+      style: normalizedArtStyle,
       metadata: {
         style_notes: [],
         composition: '',
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       imageData: base64Image,
       prompt,
-      style: ArtStyle[normalizedStyle],
+      artStyle: ArtStyle[normalizedArtStyle],
       imageUrl: publicUrl
     })
 

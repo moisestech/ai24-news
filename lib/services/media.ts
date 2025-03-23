@@ -1,6 +1,7 @@
 import { devLog } from '@/lib/utils/log'
-import { ArtStyle, type ArtStyleKey, type ArtStyleValue } from '@/types/art'
+import { ArtStyle, type ArtStyleKey } from '@/types/art'
 import { promptService } from './prompt'
+import { getArtStyleKey } from '@/lib/utils/art/artStyles'
 
 interface MediaGenerationConfig {
   headline: string
@@ -21,7 +22,7 @@ interface MediaGenerationResult {
   audioUrl: string
   prompt: string
   metadata: {
-    style: ArtStyleValue
+    artStyle: string
     headline: string
     timestamp: string
     model: string
@@ -59,7 +60,7 @@ export class MediaService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           headline: config.headline,
-          style: ArtStyle[config.artStyle],
+          artStyle: config.artStyle,
           prompt: promptResult.prompt,
           newsId: config.newsId
         })
@@ -99,7 +100,7 @@ export class MediaService {
         prompt: promptResult.prompt,
         metadata: {
           ...promptResult.metadata,
-          style: ArtStyle[config.artStyle],
+          artStyle: config.artStyle,
           timestamp: new Date().toISOString()
         }
       }
