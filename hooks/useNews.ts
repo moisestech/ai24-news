@@ -46,7 +46,7 @@ export function useNews() {
     headline: '',
     source: '',
     url: '',
-    art_style: 'VanGogh'
+    art_style: 'Vincent Van Gogh'
   })
 
   const saveNewsToHistory = useCallback(async (newsData: NewsState) => {
@@ -62,6 +62,10 @@ export function useNews() {
           headline: newsData.headline,
           source: newsData.source,
           url: newsData.url,
+          image_url: newsData.image_url,
+          audio_url: newsData.audio_url,
+          audio_alignment: newsData.audio_alignment,
+          art_style: newsData.art_style,
           user_email: session?.email || null,
           created_at: new Date().toISOString()
         })

@@ -1,40 +1,80 @@
-# ai24-news
+# AI24 News Generator
 
-Realtime News w/ FLUX Turbo
+A modern web application that generates AI-powered visualizations for news headlines using advanced AI models and real-time media generation.
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## 🚀 Features
 
-## Getting Started
+- Real-time news fetching from trusted sources
+- AI-powered image generation with artistic styles
+- Text-to-speech audio generation with word-level alignment
+- Rate limiting and subscription management
+- Responsive, modern UI with dark mode support
+- Real-time progress tracking for media generation
 
-First, run the development server:
+## 🏗️ Architecture
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```mermaid
+graph TD
+    A[Client] --> B[Next.js App Router]
+    B --> C[API Routes]
+    C --> D[External Services]
+    D --> E[ElevenLabs API]
+    D --> F[TogetherAI API]
+    D --> G[Supabase]
+    G --> H[Database]
+    G --> I[Storage]
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+See [Architecture Documentation](./docs/architecture.md) for detailed diagrams and explanations.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🛠️ Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Framework**: Next.js 14 with App Router
+- **Styling**: Tailwind CSS with custom UI components
+- **State Management**: Jotai for global state
+- **Database**: Supabase (PostgreSQL)
+- **Storage**: Supabase Storage
+- **AI Services**: 
+  - TogetherAI for image generation
+  - ElevenLabs for text-to-speech
+- **Type Safety**: TypeScript with strict mode
+- **Testing**: Jest and React Testing Library
 
-## Learn More
+## 📚 Documentation
 
-To learn more about Next.js, take a look at the following resources:
+- [Architecture Overview](./docs/architecture.md)
+- [State Management](./docs/state-management.md)
+- [Media Generation Flow](./docs/media-generation.md)
+- [API Integration](./docs/api-integration.md)
+- [Database Schema](./docs/database.md)
+- [UI Components](./docs/ui-components.md)
+- [Development Guide](./docs/development.md)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🚀 Getting Started
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Set up environment variables:
+   ```bash
+   cp .env.example .env.local
+   ```
+4. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-## Deploy on Vercel
+## 🔑 Environment Variables
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Required environment variables:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `ELEVEN_LABS_API_KEY`
+- `TOGETHER_API_KEY`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📝 License
+
+MIT

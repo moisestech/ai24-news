@@ -1,36 +1,78 @@
-import { ArtStyle } from '@/types/art'
-
-export type ArtStyleKey = keyof typeof ArtStyle
+import type { ArtStyleKey } from './art'
+import { ArtStyle } from './art'
 
 export interface NewsItem {
-  id: string;
-  title: string;
-  source: string;
-  url: string;
-  image_url?: string;
-  art_style?: string;
-  image_name?: string;
-  created_at: string;
-  user_id?: string;
+  id: string
+  headline: string
+  source_name: string
+  source_url: string
+  url: string
+  published_at: string
+  image_url?: string
+  audio_url?: string
+  audio_alignment?: {
+    characters: Array<{
+      char: string
+      start: number
+      end: number
+    }>
+  }
+  art_style: ArtStyleKey
+  prompt?: string
+  metadata?: Record<string, any>
+  image: {
+    url?: string
+    isGenerating: boolean
+    isPending: boolean
+    error: Error | null
+  }
+  trending?: boolean
+  error?: string
+  engagement?: {
+    shares: number
+    saves: number
+    views: number
+  }
+  sourceInfo?: {
+    isTrusted: boolean
+    coverage: string
+    description: string
+  }
+  created_at?: string
+  user_email?: string | null
+  source: NewsSource
+  category?: NewsCategory
+  language?: NewsLanguage
+  country?: NewsCountry
 }
 
 export interface DBError {
-  code: string;
-  message: string;
-  details?: string;
+  code: string
+  message: string
+  details?: string
 }
 
 export interface NewsResponse {
-  headline: string
-  source: string
-  url: string
+  success: boolean
+  error?: string
+  news: Array<{
+    headline: string
+    source: string
+    url: string
+  }>
 }
 
 export interface ImageResponse {
   imageUrl: string
+  prompt: string
   style: string
-  imageName: string
-  imageData: Blob | Buffer
+  metadata?: {
+    style_notes?: string[]
+    composition?: string
+    lighting?: string
+    color_palette?: string
+    negative_prompt?: string
+  }
 }
 
 export interface NewsData {
@@ -45,12 +87,7 @@ export interface NewsState {
   isLoading: boolean
   isSaving: boolean
   error: Error | null
-  data: NewsData | null
-  headline: string
-  source: string
-  url: string
-  art_style: ArtStyleKey
-  image_url?: string
+  data: NewsItem | null
 }
 
 export interface NewsAPIResponse {
@@ -66,13 +103,6 @@ export interface DevLogOptions {
   prefix: string
   level: 'debug' | 'info' | 'warn' | 'error'
   data?: any
-}
-
-export interface ImageState {
-  isGenerating: boolean
-  isPending: boolean
-  error: Error | null
-  url: string | null
 }
 
 export interface NewsCardProps {
@@ -104,27 +134,35 @@ export interface NewsCardProps {
   entry?: IntersectionObserverEntry | null
   showAuthPrompt?: boolean
   onImageGenerated?: (imageUrl: string) => void
-  imageState?: ImageState
+  imageState?: {
+    url?: string
+    isGenerating?: boolean
+    isPending?: boolean
+    error?: Error | null
+  }
   onGenerateImage?: () => Promise<void>
 }
 
-export interface NewsHistoryItem {
-  headline: string
-  source: string
-  url: string
-  image_url: string
-  art_style: ArtStyleKey
-  created_at: string
-  user_email?: string | null
+export interface NewsHistoryItem extends NewsItem {
+  id: string
+  audio_url?: string
+  audio_alignment?: {
+    characters: Array<{
+      char: string
+      start: number
+      end: number
+    }>
+  }
+  prompt?: string
 }
 
 export function convertToNewsData(item: NewsItem): NewsData {
   return {
-    headline: item.title,
-    source: item.source,
+    headline: item.headline,
+    source: item.source_name,
     url: item.url,
     art_style: item.art_style as ArtStyleKey,
-    image_url: item.image_url,
+    image_url: item.image?.url,
   }
 }
 
@@ -133,14 +171,14 @@ export function convertNewsDataToState(data: NewsData | null): NewsState | null 
   
   return {
     headline: data.headline,
-    source: data.source,
+    sourceName: data.source,
+    sourceUrl: '',
     url: data.url,
-    art_style: data.art_style || 'VanGogh',
-    image_url: data.image_url,
+    art_style: data.art_style?.toString() || 'VanGogh',
+    data: data as NewsItem,
     isLoading: false,
     isSaving: false,
-    error: null,
-    data: data
+    error: null
   }
 }
 
@@ -148,4 +186,96 @@ export interface GenerateImageResponse {
   imageUrl: string
   style: string
   success: boolean
+}
+
+export type NewsCategory = 
+  | 'general'
+  | 'business'
+  | 'entertainment'
+  | 'health'
+  | 'science'
+  | 'sports'
+  | 'technology'
+
+export type NewsLanguage = 
+  | 'en'  // English
+  | 'es'  // Spanish
+  | 'fr'  // French
+  | 'de'  // German
+  | 'it'  // Italian
+  | 'pt'  // Portuguese
+  | 'nl'  // Dutch
+  | 'no'  // Norwegian
+  | 'se'  // Swedish
+  | 'ru'  // Russian
+  | 'ar'  // Arabic
+  | 'he'  // Hebrew
+  | 'zh'  // Chinese
+
+export type NewsCountry = 
+  | 'us'  // United States
+  | 'gb'  // United Kingdom
+  | 'au'  // Australia
+  | 'ca'  // Canada
+  | 'nz'  // New Zealand
+  | 'ie'  // Ireland
+  | 'in'  // India
+  | 'sg'  // Singapore
+
+export interface NewsSource {
+  id: string
+  name: string
+  url: string
+  type: 'rss' | 'api'
+  lastFetched?: string
+}
+
+export interface NewsSourceFilter {
+  categories?: NewsCategory[]
+  countries?: NewsCountry[]
+  languages?: NewsLanguage[]
+  search?: string
+  limit?: number
+  offset?: number
+}
+
+export interface NewsSourceResponse {
+  pagination: {
+    limit: number
+    offset: number
+    count: number
+    total: number
+  }
+  data: NewsSource[]
+}
+
+export interface MediaGenerationResult {
+  imageUrl: string
+  audioUrl?: string
+  prompt: string
+  metadata?: Record<string, any>
+}
+
+export interface ImageState {
+  url?: string
+  isGenerating: boolean
+  isPending: boolean
+  error: Error | null
+  artStyle?: string
+}
+
+export interface AudioState {
+  url?: string
+  alignment: any | null
+  isGenerating: boolean
+  isPending: boolean
+  error: Error | null
+}
+
+export interface NewsSourceConfig {
+  id: string
+  name: string
+  url: string
+  type: 'rss' | 'api'
+  lastFetched?: string
 }

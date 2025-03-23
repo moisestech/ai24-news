@@ -1,17 +1,25 @@
-import { devLog } from '@/lib/utils/log'
-import { generateImage } from '@/lib/image'
-import { ArtStyle } from '@/types/art'
-import type { ArtStyleKey } from '@/types/news'
-import { config } from '@/lib/config'
+import { ArtStyle, type ArtStyleKey, type ArtStyleValue } from '@/types/art'
+import { createClient } from '@supabase/supabase-js'
 import { headers } from 'next/headers'
+import { NextResponse } from 'next/server'
 import { Ratelimit } from "@upstash/ratelimit"
 import { Redis } from "@upstash/redis"
-import { getArtStyleKey, isArtStyleKey, debugArtStyle } from '@/types/art'
-import { getArtStyleDisplay } from '@/lib/utils/art'
+
+// UTILS
+import { devLog } from '@/lib/utils/log'
+import { generateImage } from '@/lib/image'
+import { getArtStylePrompt } from '@/lib/art-styles'
+import { isValidArtStyle, normalizeArtStyle } from '@/lib/utils/art/server'
+import { getArtStyleValue } from '@/lib/utils/art/artStyles'
+
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 let ratelimit: Ratelimit | undefined
 
-// Add rate limiting if Upstash API keys are set
 if (process.env.UPSTASH_REDIS_REST_URL) {
   ratelimit = new Ratelimit({
     redis: Redis.fromEnv(),
@@ -23,153 +31,152 @@ if (process.env.UPSTASH_REDIS_REST_URL) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    
-    devLog('Generate image request received', {
-      prefix: 'api:generate-image',
-      level: 'debug'
-    }, {
-      data: { 
-        body,
-        artStyle: {
-          received: body.style,
-          type: typeof body.style,
-          isValid: isArtStyleKey(body.style),
-          display: isArtStyleKey(body.style) ? getArtStyleDisplay(body.style as ArtStyleKey) : null
-        },
-        env: {
-          NODE_ENV: process.env.NODE_ENV,
-          MOCK_API: process.env.NEXT_PUBLIC_MOCK_API,
-          hasTogetherKey: !!process.env.TOGETHER_API_KEY,
-          hasHeliconeKey: !!process.env.HELICONE_API_KEY
-        }
-      }
-    })
+    const { headline, style, prompt, newsId } = await request.json()
 
-    const { headline, style } = body
+    // Validate required fields
+    if (!headline || !style || !prompt) {
+      return NextResponse.json(
+        { details: 'Missing required fields' },
+        { status: 400 }
+      )
+    }
 
-    // Convert display value to enum key
-    const styleKey = Object.entries(ArtStyle)
-      .find(([_, value]) => value === style)?.[0] as ArtStyleKey
-
-    devLog('Style conversion', {
-      prefix: 'api:generate-image',
-      level: 'debug'
-    }, {
-      data: {
-        input: style,
-        foundKey: styleKey,
-        enumEntries: Object.entries(ArtStyle).map(([k, v]) => ({ key: k, value: v })),
-        exactMatch: Object.values(ArtStyle).includes(style),
-        requestData: {
-          headline,
-          style: styleKey
-        }
-      }
-    })
-
-    if (!styleKey) {
-      devLog('Invalid art style', {
+    // Validate art style
+    if (!isValidArtStyle(style)) {
+      devLog('Invalid art style received', {
         prefix: 'api:generate-image',
         level: 'error'
       }, {
         data: {
           receivedStyle: style,
-          validValues: Object.values(ArtStyle),
-          stringComparison: Object.values(ArtStyle).map(v => ({
-            value: v,
-            matches: v === style,
-            lengthMatch: v.length === style.length
-          }))
+          validStyles: Object.values(ArtStyle)
         }
       })
-      return Response.json({
-        error: 'Invalid art style',
-        details: `Style must be one of: ${Object.values(ArtStyle).join(', ')}`
-      }, { status: 400 })
+      
+      return NextResponse.json(
+        { 
+          details: 'Invalid art style',
+          validStyles: Object.values(ArtStyle)
+        },
+        { status: 400 }
+      )
     }
 
-    // Use the validated enum key
-    try {
-      const imageData = await generateImage(headline, styleKey)
+    // Convert style to proper format
+    const normalizedStyle = normalizeArtStyle(style) as ArtStyleKey
 
-      devLog('Image generation result', {
-        prefix: 'api:generate-image',
-        level: 'debug'
-      }, {
-        data: {
-          success: true,
-          imageType: imageData.type,
-          imageSize: imageData.size,
-          isMockImage: imageData.size < 100 // The mock image is very small
-        }
+    devLog('Generating image', {
+      prefix: 'api:generate-image',
+      level: 'info'
+    }, {
+      data: {
+        headline,
+        style: normalizedStyle,
+        prompt,
+        newsId
+      }
+    })
+
+    // Generate the image using the provided prompt
+    const base64Image = await generateImage({
+      prompt,
+      style: normalizedStyle,
+      metadata: {
+        style_notes: [],
+        composition: '',
+        lighting: '',
+        color_palette: ''
+      }
+    })
+
+    // Convert base64 to blob
+    const binaryString = atob(base64Image)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+    const imageBlob = new Blob([bytes], { type: 'image/jpeg' })
+
+    // Upload to Supabase Storage
+    const filename = `${Date.now()}-${headline.slice(0, 50).replace(/[^a-z0-9]/gi, '_')}.jpg`
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('news-images')
+      .upload(filename, imageBlob, {
+        contentType: 'image/jpeg',
+        cacheControl: '3600'
       })
 
-      // Convert Blob to base64
-      const arrayBuffer = await imageData.arrayBuffer()
-      const base64String = Buffer.from(arrayBuffer).toString('base64')
-
-      devLog('Response preparation', {
-        prefix: 'api:generate-image',
-        level: 'debug'
-      }, {
-        data: {
-          base64Length: base64String.length,
-          isMockBase64: base64String === 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-        }
-      })
-
-      return Response.json({
-        imageData: base64String,
-        style: style,
-        success: true
-      })
-
-    } catch (generateError) {
-      devLog('Image generation failed', {
+    if (uploadError) {
+      devLog('Image upload failed', {
         prefix: 'api:generate-image',
         level: 'error'
-      }, {
-        error: generateError,
-        data: {
-          headline,
-          style: styleKey,
-          displayValue: getArtStyleDisplay(styleKey as ArtStyleKey)
-        }
-      })
-
-      return Response.json({
-        error: 'Failed to generate image',
-        details: generateError instanceof Error ? generateError.message : 'Unknown error'
+      }, { error: uploadError })
+      
+      return NextResponse.json({
+        error: 'Failed to upload image',
+        details: uploadError.message
       }, { status: 500 })
     }
 
-  } catch (error) {
-    devLog('API error', {
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('news-images')
+      .getPublicUrl(filename)
+
+    // Update news_history with image_url and prompt if newsId is provided
+    if (newsId) {
+      const { error: updateError } = await supabase
+        .from('news_history')
+        .update({ 
+          image_url: publicUrl,
+          prompt: prompt
+        })
+        .eq('id', newsId)
+
+      if (updateError) {
+        devLog('Failed to update news_history', {
+          prefix: 'api:generate-image',
+          level: 'error'
+        }, { error: updateError })
+      }
+    }
+
+    devLog('Image uploaded successfully', {
       prefix: 'api:generate-image',
-      level: 'error'
+      level: 'info'
     }, {
-      error,
-      stack: error instanceof Error ? error.stack : undefined
+      data: {
+        filename,
+        publicUrl,
+        size: imageBlob.size,
+        newsId
+      }
     })
 
-    return Response.json({
-      error: 'Failed to generate image',
+    return NextResponse.json({
+      imageData: base64Image,
+      prompt,
+      style: ArtStyle[normalizedStyle],
+      imageUrl: publicUrl
+    })
+
+  } catch (error) {
+    devLog('Image generation failed', {
+      prefix: 'api:generate-image',
+      level: 'error'
+    }, { error })
+    
+    return NextResponse.json({
+      error: 'Image generation failed',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
 
 async function getIPAddress() {
-  const FALLBACK_IP_ADDRESS = "0.0.0.0"
   const headersList = await headers()
-  const forwardedFor = headersList.get("x-forwarded-for")
-
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0] ?? FALLBACK_IP_ADDRESS
-  }
-
-  return headersList.get("x-real-ip") ?? FALLBACK_IP_ADDRESS
+  const forwardedFor = headersList.get('x-forwarded-for')
+  return forwardedFor || 'unknown'
 }
 
 export const runtime = "edge" 

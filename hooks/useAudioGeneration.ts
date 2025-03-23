@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useSupabaseApp } from './useSupabaseApp'
 import type { AudioAlignment } from '@/types/audio'
 import { devLog } from '../lib/utils/log'
+import { elevenLabsService } from '@/lib/services/elevenlabs'
 
 interface AudioGenerationState {
   isGenerating: boolean
@@ -21,25 +22,20 @@ export function useAudioGeneration() {
     alignment: null
   })
 
-  const generateAudio = async (text: string, voiceId: string = '21m00Tcm4TlvDq8ikWAM') => {
+  const generateAudio = async (text: string, voiceId?: string) => {
     setState(prev => ({ ...prev, isGenerating: true, error: null }))
 
     try {
-      // Call ElevenLabs API
-      const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voiceId + '/with-timestamps', {
-        method: 'POST',
-        headers: {
-          'xi-api-key': process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY!,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ text })
+      const data = await elevenLabsService.generateSpeech({
+        text,
+        voiceId,
+        onProgress: (status) => {
+          devLog('Audio generation progress', {
+            prefix: 'audio-generation',
+            level: 'debug'
+          }, { status })
+        }
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to generate audio')
-      }
-
-      const data = await response.json()
       
       // Convert base64 to blob
       const audioBlob = await fetch(`data:audio/mpeg;base64,${data.audio_base64}`).then(r => r.blob())
@@ -48,7 +44,10 @@ export function useAudioGeneration() {
       const filename = `audio/${Date.now()}-${text.slice(0, 20)}.mp3`
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('news-media')
-        .upload(filename, audioBlob)
+        .upload(filename, audioBlob, {
+          contentType: 'audio/mpeg',
+          cacheControl: '3600'
+        })
 
       if (uploadError) throw uploadError
 

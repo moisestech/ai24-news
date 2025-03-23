@@ -27,6 +27,12 @@ class ElevenLabsApiClient {
       devLog('ElevenLabs API key is not configured', {
         prefix: 'eleven-labs',
         level: 'warn'
+      }, {
+        data: {
+          hasApiKey: false,
+          isDev: process.env.NODE_ENV === 'development',
+          env: process.env.NODE_ENV
+        }
       })
     } else {
       // Do basic validation
@@ -47,6 +53,15 @@ class ElevenLabsApiClient {
         devLog(`ElevenLabs API key validation failed: ${validationResult.message}`, {
           prefix: 'eleven-labs',
           level: 'warn'
+        }, {
+          data: validationResult.details
+        })
+      } else {
+        devLog('ElevenLabs API key validation successful', {
+          prefix: 'eleven-labs',
+          level: 'info'
+        }, {
+          data: validationResult.details
         })
       }
     }

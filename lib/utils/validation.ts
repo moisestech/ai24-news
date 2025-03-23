@@ -57,11 +57,22 @@ export function validateElevenLabsApiKey(): ValidationResult {
     devLog('ElevenLabs API key is not configured', {
       prefix: 'validation',
       level: 'warn'
+    }, {
+      data: {
+        hasApiKey: false,
+        isDev: process.env.NODE_ENV === 'development',
+        env: process.env.NODE_ENV
+      }
     })
     
     return {
       isValid: false,
-      message: 'ElevenLabs API key is not configured in your environment variables.'
+      message: 'ElevenLabs API key is not configured in your environment variables.',
+      details: {
+        hasApiKey: false,
+        isDev: process.env.NODE_ENV === 'development',
+        env: process.env.NODE_ENV
+      }
     }
   }
   
@@ -71,8 +82,12 @@ export function validateElevenLabsApiKey(): ValidationResult {
       prefix: 'validation',
       level: 'warn'
     }, {
-      keyLength: apiKey.length,
-      containsPlaceholder: apiKey.includes('YOUR_ELEVEN_LABS_API_KEY')
+      data: {
+        keyLength: apiKey.length,
+        containsPlaceholder: apiKey.includes('YOUR_ELEVEN_LABS_API_KEY'),
+        isDev: process.env.NODE_ENV === 'development',
+        env: process.env.NODE_ENV
+      }
     })
     
     return {
@@ -80,14 +95,34 @@ export function validateElevenLabsApiKey(): ValidationResult {
       message: 'ElevenLabs API key appears to be invalid or is using a placeholder value.',
       details: {
         length: apiKey.length,
-        containsPlaceholder: apiKey.includes('YOUR_ELEVEN_LABS_API_KEY')
+        containsPlaceholder: apiKey.includes('YOUR_ELEVEN_LABS_API_KEY'),
+        isDev: process.env.NODE_ENV === 'development',
+        env: process.env.NODE_ENV
       }
     }
   }
   
+  devLog('ElevenLabs API key is valid', {
+    prefix: 'validation',
+    level: 'info'
+  }, {
+    data: {
+      hasApiKey: true,
+      keyLength: apiKey.length,
+      isDev: process.env.NODE_ENV === 'development',
+      env: process.env.NODE_ENV
+    }
+  })
+  
   return {
     isValid: true,
-    message: 'ElevenLabs API key is valid'
+    message: 'ElevenLabs API key is valid',
+    details: {
+      hasApiKey: true,
+      keyLength: apiKey.length,
+      isDev: process.env.NODE_ENV === 'development',
+      env: process.env.NODE_ENV
+    }
   }
 }
 
@@ -125,7 +160,7 @@ export function getEnvironmentInfo() {
     togetherApiKey: !!process.env.TOGETHER_API_KEY,
     supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE,
+    supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
     mockApi: process.env.NEXT_PUBLIC_MOCK_API === 'true',
   }
 } 

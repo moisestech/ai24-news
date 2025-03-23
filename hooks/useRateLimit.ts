@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid'
 const DAILY_LIMIT = 5
 const ANONYMOUS_LIMIT = 1
 const ANONYMOUS_STORAGE_KEY = 'ai24_anonymous_session'
+const isBrowser = typeof window !== 'undefined'
 
 interface RateLimitSession {
   email: string | null
@@ -29,6 +30,14 @@ export function useRateLimit() {
   
   // Get or create anonymous session
   const getAnonymousSession = useCallback(() => {
+    if (!isBrowser) {
+      return {
+        id: '',
+        generationsToday: 0,
+        lastResetDate: timeUtils.getCurrentDay()
+      }
+    }
+    
     const stored = localStorage.getItem(ANONYMOUS_STORAGE_KEY)
     if (stored) {
       return JSON.parse(stored)
@@ -45,6 +54,8 @@ export function useRateLimit() {
 
   // Update anonymous session
   const updateAnonymousSession = useCallback((updates: Partial<AnonymousSession>) => {
+    if (!isBrowser) return null
+    
     const current = getAnonymousSession()
     const updated = { ...current, ...updates }
     localStorage.setItem(ANONYMOUS_STORAGE_KEY, JSON.stringify(updated))
@@ -114,10 +125,27 @@ export function useRateLimit() {
         throw new RateLimitError()
       }
 
+      // Don't increment usage here - it will be done after successful operation
+      return true
+    } catch (error) {
+      if (error instanceof RateLimitError) throw error
+      devLog('Rate limit check failed', {
+        prefix: 'rate-limit',
+        level: 'error'
+      }, { error })
+      return false
+    }
+  }, [getSession, saveSession, setRemainingLimit, updateAnonymousSession])
+
+  const incrementUsage = useCallback(async () => {
+    const session = getSession()
+    const isAnonymous = !session.email
+
+    try {
       // Increment usage
       if (isAnonymous) {
         updateAnonymousSession({
-          generationsToday: currentUsage + 1,
+          generationsToday: session.usageCount + 1,
           lastGeneration: new Date().toISOString()
         })
       } else {
@@ -127,12 +155,11 @@ export function useRateLimit() {
       // Update local state
       const newUsage = session.usageCount + 1
       saveSession({ usageCount: newUsage })
-      setRemainingLimit(limit - newUsage)
+      setRemainingLimit((isAnonymous ? ANONYMOUS_LIMIT : DAILY_LIMIT) - newUsage)
       
       return true
     } catch (error) {
-      if (error instanceof RateLimitError) throw error
-      devLog('Rate limit check failed', {
+      devLog('Failed to increment usage', {
         prefix: 'rate-limit',
         level: 'error'
       }, { error })
@@ -176,6 +203,7 @@ export function useRateLimit() {
   return {
     remainingLimit,
     checkAndDecrementLimit,
+    incrementUsage,
     resetLimit,
     getSession,
     isAnonymous: !getSession().email

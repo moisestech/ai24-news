@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 // Define types at the top
 export interface NewsData {
@@ -7,19 +8,46 @@ export interface NewsData {
   source: string
   url: string
   image_url?: string
+  audio_url?: string
+  audio_alignment?: {
+    characters: Array<{
+      char: string
+      start: number
+      end: number
+    }>
+  }
   art_style?: string
   created_at: string
   user_email: string
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// Singleton pattern for Supabase client
+let supabaseInstance: ReturnType<typeof createClientComponentClient> | null = null
+
+// Client-side Supabase client
+export function getSupabaseClient() {
+  if (!supabaseInstance) {
+    supabaseInstance = createClientComponentClient()
+  }
+  return supabaseInstance
+}
+
+// Server-side Supabase client creator
+export function createServerSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
+  
+  if (!supabaseUrl || !supabaseServiceRole) {
+    throw new Error('Supabase credentials are not properly configured')
+  }
+  
+  return createClient(supabaseUrl, supabaseServiceRole)
+}
 
 // Email related queries
 export const emailQueries = {
   saveEmail: async (email: string) => {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('emails')
       .insert([{ email }])
@@ -30,6 +58,7 @@ export const emailQueries = {
   },
 
   getEmailStatus: async (email: string) => {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('emails')
       .select('*')
@@ -44,6 +73,7 @@ export const emailQueries = {
 // News history related queries
 export const newsQueries = {
   async getNewsById(id: string): Promise<NewsData | null> {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('news_history')
       .select('*')
@@ -51,7 +81,7 @@ export const newsQueries = {
       .single()
 
     if (error) throw error
-    return data as NewsData
+    return data as unknown as NewsData
   },
 
   async saveNewsToHistory(newsData: {
@@ -61,6 +91,7 @@ export const newsQueries = {
     image_url?: string
     user_email: string
   }) {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('news_history')
       .insert([newsData])
@@ -72,6 +103,7 @@ export const newsQueries = {
   },
 
   async fetchNewsHistory() {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('news_history')
       .select('*')
@@ -82,6 +114,7 @@ export const newsQueries = {
   },
 
   fetchUserNewsHistory: async (email: string) => {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('news_history')
       .select('*')
@@ -93,7 +126,8 @@ export const newsQueries = {
     return data
   },
 
-  getLatestNews: async (email: string) => {
+  async getLatestNews(email: string) {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('news_history')
       .select('*')
@@ -103,13 +137,14 @@ export const newsQueries = {
       .single()
 
     if (error) throw error
-    return data
+    return data as unknown as NewsData
   }
 }
 
 // Rate limit related queries
 export const rateLimitQueries = {
   getDailyUsage: async (email: string) => {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('usage_metrics')
       .select('visualizations_count')
@@ -122,6 +157,7 @@ export const rateLimitQueries = {
   },
 
   incrementUsage: async (email: string) => {
+    const supabase = getSupabaseClient()
     const { error } = await supabase.rpc('increment_usage', { 
       p_email: email 
     })
@@ -130,6 +166,7 @@ export const rateLimitQueries = {
   },
 
   resetDailyLimit: async (email: string) => {
+    const supabase = getSupabaseClient()
     const { error } = await supabase
       .from('usage_metrics')
       .upsert({
@@ -146,6 +183,7 @@ export const rateLimitQueries = {
 // Subscription related queries
 export const subscriptionQueries = {
   getCurrentSubscription: async (email: string) => {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('subscriptions')
       .select('tier')
@@ -158,6 +196,7 @@ export const subscriptionQueries = {
   },
 
   getDailyUsage: async (email: string) => {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from('usage_metrics')
       .select('visualizations_count')
@@ -170,6 +209,7 @@ export const subscriptionQueries = {
   },
 
   incrementUsage: async (email: string) => {
+    const supabase = getSupabaseClient()
     const today = new Date().toISOString().split('T')[0];
     
     const { error } = await supabase
@@ -189,6 +229,7 @@ export const subscriptionQueries = {
 
 // Add timestamp check to prevent too frequent API calls
 export async function shouldFetchNewHeadline() {
+  const supabase = getSupabaseClient()
   const { data: latestNews } = await supabase
     .from('news')
     .select('created_at')
@@ -197,7 +238,7 @@ export async function shouldFetchNewHeadline() {
 
   if (!latestNews?.length) return true;
 
-  const lastFetchTime = new Date(latestNews[0].created_at);
+  const lastFetchTime = new Date(latestNews[0].created_at as string);
   const now = new Date();
   const hoursSinceLastFetch = (now.getTime() - lastFetchTime.getTime()) / (1000 * 60 * 60);
 
@@ -209,6 +250,7 @@ export async function saveNewsWithStyle(
   image: string, 
   artStyle: { id: string; name: string }
 ) {
+  const supabase = getSupabaseClient()
   const { error } = await supabase.from('news').insert([{ 
     title, 
     image,
@@ -217,4 +259,25 @@ export async function saveNewsWithStyle(
   }]);
 
   if (error) throw error;
+}
+
+// Create a Supabase client with CORS configuration
+export function createSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    },
+    global: {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+      }
+    }
+  })
 } 

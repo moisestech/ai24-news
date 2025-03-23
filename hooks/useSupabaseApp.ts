@@ -3,12 +3,14 @@
 import { useAtom } from 'jotai'
 import { userEmailAtom } from '../lib/atoms'
 import { newsQueries } from '../lib/supabase'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { devLog } from '../lib/utils/log'
 import type { ArtStyleKey } from '@/types/news'
 import { NewsHistorySchema, type NewsHistoryRecord } from '@/lib/schemas/news'
 import { z } from 'zod'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
+import { getClientSupabase } from '@/lib/supabase/client'
+import { store } from '@/lib/store'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 interface NewsHistoryItem {
   headline: string
@@ -21,8 +23,20 @@ interface NewsHistoryItem {
 }
 
 export function useSupabaseApp() {
-  const [email] = useAtom(userEmailAtom)
-  const supabase = createClientComponentClient()
+  const [email] = useAtom(userEmailAtom, { store })
+  
+  // Use useMemo to ensure we only create the client once per component instance
+  const supabase = useMemo(() => {
+    try {
+      return getClientSupabase()
+    } catch (error) {
+      devLog('Error creating Supabase client', {
+        prefix: 'supabase-app',
+        level: 'error'
+      }, { error })
+      return null
+    }
+  }, [])
 
   useEffect(() => {
     devLog('SupabaseApp hook initialized', {
@@ -35,6 +49,10 @@ export function useSupabaseApp() {
   }, [supabase, email])
 
   const saveNewsToHistory = async (news: NewsHistoryRecord) => {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized')
+    }
+
     try {
       // First check if entry exists
       const { data: existing } = await supabase

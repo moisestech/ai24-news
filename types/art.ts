@@ -1,13 +1,14 @@
 import { devLog } from '@/lib/utils/log'
 
-export enum ArtStyle {
-  VanGogh = 'Vincent Van Gogh',
-  Picasso = 'Pablo Picasso',
-  DaVinci = 'Leonardo da Vinci',
-  Monet = 'Claude Monet',
-  Rembrandt = 'Rembrandt',
-  Dali = 'Salvador Dali'
-}
+export const ArtStyle = {
+  VanGogh: 'Vincent Van Gogh',
+  Picasso: 'Pablo Picasso',
+  DaVinci: 'Leonardo da Vinci',
+  Monet: 'Claude Monet',
+  Rembrandt: 'Rembrandt',
+  Dali: 'Salvador Dali',
+  Pollock: 'Jackson Pollock'
+} as const
 
 export type ArtStyleKey = keyof typeof ArtStyle
 export type ArtStyleValue = typeof ArtStyle[ArtStyleKey]
@@ -27,7 +28,7 @@ export function isArtStyleKey(value: any): value is ArtStyleKey {
 
 // Type guard to check if a string is a valid display value
 export function isArtStyleValue(value: unknown): value is ArtStyleValue {
-  return typeof value === 'string' && Object.values(ArtStyle).includes(value as ArtStyle)
+  return typeof value === 'string' && Object.values(ArtStyle).includes(value as ArtStyleValue)
 }
 
 export function getArtStyleKey(displayValue: string): ArtStyleKey {
@@ -62,7 +63,7 @@ export function debugArtStyle(value: unknown) {
 export function isValidArtStyle(style: string): boolean {
   // Check if it's a valid display value
   const validDisplayValues = Object.values(ArtStyle)
-  if (validDisplayValues.includes(style as ArtStyle)) {
+  if (validDisplayValues.includes(style as ArtStyleValue)) {
     return true
   }
   
@@ -72,7 +73,7 @@ export function isValidArtStyle(style: string): boolean {
 }
 
 // Convert any art style format to display value
-export function getArtStyleValue(style: ArtStyle | string): string {
+export function getArtStyleValue(style: ArtStyleKey | string): string {
   devLog('Converting art style', {
     prefix: 'art-style',
     level: 'debug'
@@ -81,13 +82,13 @@ export function getArtStyleValue(style: ArtStyle | string): string {
       input: style,
       type: typeof style,
       isEnumKey: style in ArtStyle,
-      isDisplayValue: Object.values(ArtStyle).includes(style as ArtStyle)
+      isDisplayValue: Object.values(ArtStyle).includes(style as ArtStyleValue)
     }
   })
 
   if (typeof style === 'string') {
     // If it's already a display value, return it
-    if (Object.values(ArtStyle).includes(style as ArtStyle)) {
+    if (Object.values(ArtStyle).includes(style as ArtStyleValue)) {
       return style
     }
     // If it's an enum key, get the display value

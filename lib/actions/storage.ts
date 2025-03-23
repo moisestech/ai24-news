@@ -1,19 +1,7 @@
 'use server'
 
-import { createClient } from '@supabase/supabase-js'
 import { devLog } from '../utils/log'
-
-// Create admin client on the server side
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-)
+import { getAdminSupabase } from '../supabase/client'
 
 export async function uploadToStorage(
   imageData: Blob,
@@ -48,7 +36,7 @@ export async function uploadToStorage(
       ? Buffer.from(await imageData.arrayBuffer())
       : imageData
 
-    const { data, error } = await supabaseAdmin.storage
+    const { data, error } = await getAdminSupabase().storage
       .from(bucket)
       .upload(fullPath, buffer, {
         upsert: true,
@@ -70,7 +58,7 @@ export async function uploadToStorage(
       throw error
     }
 
-    const { data: urlData } = supabaseAdmin.storage
+    const { data: urlData } = getAdminSupabase().storage
       .from(bucket)
       .getPublicUrl(fullPath)
 
@@ -122,6 +110,93 @@ export async function uploadNewsImage(
         dataType: imageData.constructor.name
       }
     })
+    throw error
+  }
+}
+
+export async function uploadImageToStorage(
+  base64Data: string,
+  headline: string,
+  options: { bucket?: string; path?: string; contentType?: string; newsId?: string } = {}
+): Promise<string> {
+  try {
+    const {
+      bucket = 'news-images',
+      path = 'generated',
+      contentType = 'image/jpeg',
+      newsId
+    } = options
+
+    // Convert base64 to Buffer
+    const buffer = Buffer.from(base64Data, 'base64')
+
+    // Generate filename
+    const timestamp = Date.now()
+    const fileName = `ai24live_${headline.slice(0, 50).replace(/[^a-z0-9]/gi, '_')}_${timestamp}.jpg`
+    const fullPath = fileName
+
+    devLog('Uploading to Supabase storage', {
+      prefix: 'storage-action',
+      level: 'debug'
+    }, {
+      data: {
+        fileName,
+        bucket,
+        path: fullPath,
+        newsId,
+        bufferSize: buffer.length
+      }
+    })
+
+    // Upload to Supabase storage using admin client
+    const { data: uploadData, error: uploadError } = await getAdminSupabase().storage
+      .from(bucket)
+      .upload(fullPath, buffer, {
+        contentType,
+        upsert: true,
+        cacheControl: '3600'
+      })
+
+    if (uploadError) {
+      devLog('Upload error', {
+        prefix: 'storage-action',
+        level: 'error'
+      }, { 
+        error: uploadError,
+        details: {
+          bucket,
+          path: fullPath,
+          contentType,
+          bufferSize: buffer.length,
+          newsId
+        }
+      })
+      throw uploadError
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = getAdminSupabase().storage
+      .from(bucket)
+      .getPublicUrl(fullPath)
+
+    devLog('Image uploaded successfully', {
+      prefix: 'storage-action',
+      level: 'debug'
+    }, {
+      data: {
+        publicUrl,
+        uploadData,
+        newsId
+      }
+    })
+
+    return publicUrl
+
+  } catch (error) {
+    devLog('Image upload failed', {
+      prefix: 'storage-action',
+      level: 'error'
+    }, { error })
     throw error
   }
 } 

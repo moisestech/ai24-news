@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import { devLog } from './log'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { getStorageSupabase } from '../supabase/client'
 
 interface UploadOptions {
   bucket?: string
@@ -16,17 +16,8 @@ const defaultOptions: UploadOptions = {
   cacheControl: '3600'
 }
 
-// Create a Supabase client with the service role key
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-)
+// Get the admin client for storage operations
+const supabaseAdmin = getStorageSupabase()
 
 /**
  * Uploads a file to Supabase Storage with validation and error handling

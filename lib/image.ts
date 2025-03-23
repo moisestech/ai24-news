@@ -1,5 +1,9 @@
+import { devLog } from '@/lib/utils/log'
 import { ArtStyle } from '@/types/art'
-import Together from "together-ai"
+import Together from 'together-ai'
+import { z } from 'zod'
+import { getArtStylePrompt } from './art-styles'
+import { newsQueries } from './supabase'
 
 interface GenerateImageOptions {
   width?: number
@@ -7,6 +11,7 @@ interface GenerateImageOptions {
   steps?: number
   seed?: number
   iterativeMode?: boolean
+  newsId?: string
 }
 
 const defaultOptions: GenerateImageOptions = {
@@ -16,36 +21,56 @@ const defaultOptions: GenerateImageOptions = {
   iterativeMode: false
 }
 
-export async function generateImage(
-  headline: string,
-  style: keyof typeof ArtStyle,
-  options: GenerateImageOptions = defaultOptions
-): Promise<Blob> {
+// Define the schema for the image generation response
+const ImageResponseSchema = z.object({
+  data: z.array(z.object({
+    b64_json: z.string()
+  }))
+})
+
+interface ImageGenerationConfig {
+  prompt: string
+  style: keyof typeof ArtStyle
+  metadata?: {
+    style_notes?: string[]
+    composition?: string
+    lighting?: string
+    color_palette?: string
+    negative_prompt?: string
+  }
+}
+
+export async function generateImage(config: ImageGenerationConfig): Promise<string> {
   try {
-    console.log('Environment check:', {
-      NODE_ENV: process.env.NODE_ENV,
-      MOCK_API: process.env.NEXT_PUBLIC_MOCK_API,
-      TOGETHER_API_KEY: !!process.env.TOGETHER_API_KEY,
-      HELICONE_API_KEY: !!process.env.HELICONE_API_KEY
+    devLog('Environment check:', {
+      prefix: 'image-service',
+      level: 'debug'
+    }, {
+      data: {
+        NODE_ENV: process.env.NODE_ENV,
+        MOCK_API: process.env.NEXT_PUBLIC_MOCK_API,
+        TOGETHER_API_KEY: !!process.env.TOGETHER_API_KEY,
+        HELICONE_API_KEY: !!process.env.HELICONE_API_KEY
+      }
     })
 
     // Only use mock mode if explicitly enabled
     if (process.env.NEXT_PUBLIC_MOCK_API === 'true') {
-      console.log('Using mock image')
+      devLog('Using mock image', {
+        prefix: 'image-service',
+        level: 'debug'
+      })
       const fallbackBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-      const byteCharacters = atob(fallbackBase64)
-      const byteArray = new Uint8Array(byteCharacters.length)
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteArray[i] = byteCharacters.charCodeAt(i)
-      }
-      return new Blob([byteArray], { type: 'image/png' })
+      return fallbackBase64
     }
 
     if (!process.env.TOGETHER_API_KEY) {
       throw new Error('Together API key not configured')
     }
 
-    // Create Together client
+    // Construct the full prompt with metadata
+    const fullPrompt = constructFullPrompt(config)
+
     const client = new Together({
       apiKey: process.env.TOGETHER_API_KEY,
       baseURL: process.env.HELICONE_API_KEY ? "https://together.helicone.ai/v1" : undefined,
@@ -54,102 +79,95 @@ export async function generateImage(
       } : undefined
     })
 
-    const styleDisplay = ArtStyle[style]
-    const prompt = `${headline}. Use a ${styleDisplay} style for the image.`
-
-    console.log('Calling Together API:', {
-      prompt,
-      model: "black-forest-labs/FLUX.1-schnell",
-      options
+    devLog('Calling Together API:', {
+      prefix: 'image-service',
+      level: 'debug'
+    }, {
+      data: {
+        prompt: fullPrompt,
+        model: "black-forest-labs/FLUX.1-schnell",
+        options: defaultOptions
+      }
     })
 
     const response = await client.images.create({
-      prompt,
+      prompt: fullPrompt,
       model: "black-forest-labs/FLUX.1-schnell",
-      width: options.width,
-      height: options.height,
-      seed: options.iterativeMode ? 123 : undefined,
-      steps: options.steps,
+      width: defaultOptions.width,
+      height: defaultOptions.height,
+      seed: defaultOptions.iterativeMode ? 123 : undefined,
+      steps: defaultOptions.steps,
       response_format: "base64"
     })
 
-    console.log('Raw API response structure:', {
-      responseType: typeof response,
-      hasData: !!response.data,
-      dataKeys: Object.keys(response),
-      data: response.data,
-      firstItem: {
-        type: typeof response.data?.[0],
-        keys: response.data?.[0] ? Object.keys(response.data[0]) : [],
-        value: response.data?.[0],
-        stringified: JSON.stringify(response.data?.[0], null, 2)
+    devLog('Raw API response structure:', {
+      prefix: 'image-service',
+      level: 'debug'
+    }, {
+      data: {
+        responseType: typeof response,
+        hasData: !!response.data,
+        dataKeys: Object.keys(response),
+        data: response.data,
+        firstItem: {
+          type: typeof response.data?.[0],
+          keys: response.data?.[0] ? Object.keys(response.data[0]) : [],
+          value: response.data?.[0],
+          stringified: JSON.stringify(response.data?.[0], null, 2)
+        }
       }
     })
 
-    // Log the full response for debugging
-    console.log('Full API response:', JSON.stringify(response, null, 2))
+    // Validate the response
+    const validatedResponse = ImageResponseSchema.parse(response)
 
-    const firstItem = response.data?.[0]
-    if (!firstItem) {
-      throw new Error('No data in response')
-    }
+    const base64Image = validatedResponse.data[0].b64_json
 
-    console.log('First item structure:', {
-      type: typeof firstItem,
-      keys: Object.keys(firstItem),
-      hasBase64: 'base64' in firstItem,
-      hasImage: 'image' in firstItem,
-      hasB64Json: 'b64_json' in firstItem,
-      properties: Object.getOwnPropertyNames(firstItem)
-    })
-
-    // Get base64 from b64_json field
-    const base64String = (firstItem as any).b64_json
-    if (typeof base64String !== 'string') {
-      console.error('Invalid base64 data:', {
-        type: typeof base64String,
-        value: base64String,
-        availableFields: Object.keys(firstItem || {})
-      })
-      throw new Error('Invalid or missing base64 data in response')
-    }
-
-    console.log('Base64 data found:', {
-      length: base64String.length,
-      preview: base64String.substring(0, 50) + '...'
-    })
-
-    try {
-      const byteCharacters = atob(base64String)
-      const byteArray = new Uint8Array(byteCharacters.length)
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteArray[i] = byteCharacters.charCodeAt(i)
+    devLog('Image generated successfully', {
+      prefix: 'image-service',
+      level: 'debug'
+    }, {
+      data: {
+        style: config.style,
+        promptLength: fullPrompt.length,
+        base64Length: base64Image.length,
+        preview: base64Image.substring(0, 50) + '...'
       }
-      
-      const blob = new Blob([byteArray], { type: 'image/jpeg' }) // Changed to jpeg since that's what the base64 header suggests
-      
-      console.log('Blob created:', {
-        size: blob.size,
-        type: blob.type
-      })
+    })
 
-      return blob
-    } catch (error) {
-      console.error('Failed to convert base64 to blob:', {
-        error,
-        base64Length: base64String.length,
-        base64Start: base64String.substring(0, 50)
-      })
-      throw new Error('Failed to convert image data')
-    }
+    return base64Image
 
   } catch (error) {
-    console.error('Image generation failed:', {
+    devLog('Image generation failed', {
+      prefix: 'image-service',
+      level: 'error'
+    }, { 
       error,
       message: error instanceof Error ? error.message : 'Unknown error'
     })
     throw error
   }
+}
+
+function constructFullPrompt(config: ImageGenerationConfig): string {
+  const parts = [config.prompt]
+
+  if (config.metadata) {
+    if (config.metadata.style_notes?.length) {
+      parts.push(`Style notes: ${config.metadata.style_notes.join(', ')}`)
+    }
+    if (config.metadata.composition) {
+      parts.push(`Composition: ${config.metadata.composition}`)
+    }
+    if (config.metadata.lighting) {
+      parts.push(`Lighting: ${config.metadata.lighting}`)
+    }
+    if (config.metadata.color_palette) {
+      parts.push(`Color palette: ${config.metadata.color_palette}`)
+    }
+  }
+
+  return parts.join('\n')
 }
 
 export async function optimizeImage(

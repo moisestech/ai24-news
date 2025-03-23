@@ -32,7 +32,10 @@ export async function GET() {
       level: 'debug'
     })
 
-    return Response.json(news)
+    return Response.json({
+      success: true,
+      news: [news]
+    })
   } catch (error) {
     devLog('News fetch failed', {
       prefix: 'api:fetch-news',
@@ -55,9 +58,9 @@ export async function GET() {
 
     return Response.json(
       {
-        error: 'Failed to fetch news',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString()
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch news',
+        news: []
       },
       { status: 500 }
     )

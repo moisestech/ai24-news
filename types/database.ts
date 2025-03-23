@@ -11,6 +11,7 @@ export interface Database {
           audio_url: string
           audio_alignment: string
           art_style: string
+          prompt: string
           user_email: string | null
           created_at: string
         }

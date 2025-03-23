@@ -1,3 +1,5 @@
+'use client'
+
 import { useEffect } from 'react'
 import { useAtom } from 'jotai'
 import { userEmailAtom } from '../lib/atoms'
@@ -12,6 +14,8 @@ interface SessionData {
   lastResetDate: string
 }
 
+const isBrowser = typeof window !== 'undefined'
+
 export function useSession() {
   const [, setEmail] = useAtom(userEmailAtom)
 
@@ -24,11 +28,15 @@ export function useSession() {
       }
     }
 
-    window.addEventListener('storage', handleStorageChange)
-    return () => window.removeEventListener('storage', handleStorageChange)
+    if (isBrowser) {
+      window.addEventListener('storage', handleStorageChange)
+      return () => window.removeEventListener('storage', handleStorageChange)
+    }
   }, [setEmail])
 
   const saveSession = (data: Partial<SessionData>) => {
+    if (!isBrowser) return
+
     const current = getSession()
     const updated = {
       ...current,
@@ -45,6 +53,8 @@ export function useSession() {
       usageCount: 0,
       lastResetDate: timeUtils.getCurrentDay()
     }
+
+    if (!isBrowser) return defaultSession
 
     const saved = localStorage.getItem(SESSION_KEY)
     if (!saved) return defaultSession
@@ -64,6 +74,8 @@ export function useSession() {
   }
 
   const clearSession = () => {
+    if (!isBrowser) return
+    
     localStorage.removeItem(SESSION_KEY)
     setEmail(null)
   }

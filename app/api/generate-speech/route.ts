@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { devLog } from '@/lib/utils/log'
+import { elevenLabsService } from '@/lib/services/elevenlabs'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
 export async function POST(request: Request) {
@@ -15,24 +16,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing text' }, { status: 400 })
     }
 
-    // Call ElevenLabs API
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`,
-      {
-        method: 'POST',
-        headers: {
-          'xi-api-key': process.env.ELEVENLABS_API_KEY!,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ text })
+    // Generate speech using ElevenLabs service
+    const data = await elevenLabsService.generateSpeech({
+      text,
+      voiceId,
+      onProgress: (status) => {
+        devLog('Speech generation progress', {
+          prefix: 'generate-speech',
+          level: 'debug'
+        }, { status })
       }
-    )
-
-    if (!response.ok) {
-      throw new Error('ElevenLabs API call failed')
-    }
-
-    const data = await response.json()
+    })
     
     // Convert base64 to blob
     const audioBlob = await fetch(`data:audio/mpeg;base64,${data.audio_base64}`).then(r => r.blob())

@@ -1,54 +1,71 @@
-import { useState, useCallback } from 'react'
+'use client'
+
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { devLog } from '@/lib/utils/log'
 import { useToast } from '@/hooks/use-toast'
+import { ArtStyle } from '@/types/art'
+import { audioService } from '@/lib/services/audio'
+import { useArtStyle } from '@/hooks/useArtStyle'
+import type { AudioState, ImageState } from '@/types/news'
+import type { ArtStyleKey } from '@/types/art'
 
 interface UseNewsMediaProps {
   headline: string
   source: string
   url: string
+  imageUrl?: string
+  audioUrl?: string
+  audioAlignment?: any
+  artStyle?: ArtStyleKey
+  currentNews?: { id: string }
+  onImageGenerated?: (url: string) => Promise<void>
+  autoGenerate?: boolean
 }
 
-interface ImageState {
-  isGenerating: boolean
-  isPending: boolean
-  error: Error | null
-  url: string | null
-}
-
-interface AudioState {
-  isGenerating: boolean
-  isPending: boolean
-  error: Error | null
-  url: string | null
-  alignment: any | null
+interface NewsMediaState {
+  image: ImageState
+  audio: AudioState
 }
 
 export function useNewsMedia({
   headline,
   source,
-  url
+  url,
+  imageUrl,
+  audioUrl,
+  audioAlignment,
+  artStyle,
+  currentNews,
+  onImageGenerated,
+  autoGenerate = false
 }: UseNewsMediaProps) {
   const { toast } = useToast()
+  const { getRandomStyle } = useArtStyle()
+  const hasGeneratedAudio = useRef(false)
+  const isGeneratingRef = useRef(false)
+  const generationAttempts = useRef(0)
   const [status, setStatus] = useState<'idle' | 'generating' | 'complete' | 'error'>('idle')
   
-  const [imageState, setImageState] = useState<ImageState>({
-    isGenerating: false,
-    isPending: false,
-    error: null,
-    url: null,
-  })
-  
-  const [audioState, setAudioState] = useState<AudioState>({
-    isGenerating: false,
-    isPending: false,
-    error: null,
-    url: null,
-    alignment: null,
+  const [state, setState] = useState<NewsMediaState>({
+    image: {
+      url: imageUrl,
+      isGenerating: false,
+      isPending: false,
+      error: null
+    },
+    audio: {
+      url: audioUrl,
+      alignment: audioAlignment,
+      isGenerating: false,
+      isPending: false,
+      error: null
+    }
   })
 
   // Throttle to prevent excessive API calls
   const [lastGenerationTime, setLastGenerationTime] = useState<number>(0)
   const THROTTLE_TIME = 5000 // 5 seconds
+  const MAX_ATTEMPTS = 3 // Maximum number of generation attempts
 
   // Utility to check if we're throttled
   const isThrottled = () => {
@@ -56,194 +73,76 @@ export function useNewsMedia({
     return (now - lastGenerationTime) < THROTTLE_TIME
   }
 
-  const generateImage = useCallback(async () => {
-    if (imageState.isGenerating || !headline) return
-    
-    try {
-      setImageState(prev => ({ ...prev, isGenerating: true, error: null }))
-      
-      // Set to random art style
-      const artStyles = ['VanGogh', 'Picasso', 'DaVinci', 'Monet', 'Rembrandt', 'Dali']
-      const randomStyle = artStyles[Math.floor(Math.random() * artStyles.length)]
-      
-      const response = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          headline,
-          style: randomStyle
-        })
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to generate image')
-      }
-      
-      const data = await response.json()
-      
-      setImageState(prev => ({
-        ...prev,
-        isGenerating: false,
-        url: data.imageUrl,
-      }))
-      
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      
-      devLog('Image generation failed', {
-        prefix: 'news-media',
-        level: 'error'
-      }, { error })
-      
-      setImageState(prev => ({
-        ...prev,
-        isGenerating: false,
-        error: error instanceof Error ? error : new Error(errorMessage)
-      }))
-      
-      // Show toast for image generation failure
-      toast({
-        title: 'Image Generation Failed',
-        description: errorMessage,
-        variant: 'destructive'
-      })
-    }
-  }, [headline, imageState.isGenerating, toast])
-  
-  const generateAudio = useCallback(async () => {
-    if (audioState.isGenerating || !headline) return
-    
-    try {
-      setAudioState(prev => ({ ...prev, isGenerating: true, error: null }))
-      
-      // Generate a random ID - in a real app, this would be a proper UUID or ID from your database
-      const newsId = `news-${Date.now()}`
-      
-      const response = await fetch('/api/generate-audio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          headline, 
-          newsId 
-        })
-      })
-      
-      // Handle API response
-      const data = await response.json()
-      
-      if (!response.ok) {
-        // Handle specific error types
-        if (data.errorType === 'authentication') {
-          toast({
-            title: 'API Authentication Failed',
-            description: 'Your ElevenLabs API key is invalid or missing. Check your environment variables.',
-            variant: 'destructive'
-          })
-          throw new Error('ElevenLabs API key is invalid or missing')
-        } else if (data.errorType === 'rate_limit') {
-          toast({
-            title: 'Rate Limit Exceeded',
-            description: 'You have reached the ElevenLabs API usage limit.',
-            variant: 'destructive'
-          })
-          throw new Error('Rate limit exceeded')  
-        } else if (data.errorType === 'configuration') {
-          toast({
-            title: 'Configuration Error',
-            description: 'ElevenLabs API key is not configured in your environment variables.',
-            variant: 'destructive'
-          })
-          throw new Error('API configuration error')
-        } else {
-          throw new Error(data.error || 'Failed to generate audio')
-        }
-      }
-      
-      // If audio is ready immediately
-      if (data.status === 'ready' && data.audioUrl) {
-        setAudioState(prev => ({
-          ...prev,
-          isGenerating: false,
-          url: data.audioUrl,
-          alignment: data.alignment
-        }))
-      } else {
-        // Start polling for status
-        let attempts = 0
-        const maxAttempts = 10
-        const pollInterval = setInterval(async () => {
-          try {
-            attempts++
-            
-            const statusResponse = await fetch(`/api/get-audio-status?newsId=${newsId}`)
-            const statusData = await statusResponse.json()
-            
-            if (statusData.status === 'ready' && statusData.audioUrl) {
-              clearInterval(pollInterval)
-              setAudioState(prev => ({
-                ...prev,
-                isGenerating: false,
-                url: statusData.audioUrl,
-                alignment: statusData.alignment
-              }))
-            } else if (statusData.status === 'failed') {
-              clearInterval(pollInterval)
-              throw new Error(statusData.error || 'Audio generation failed')
-            } else if (attempts >= maxAttempts) {
-              clearInterval(pollInterval)
-              throw new Error('Audio generation timed out')
-            }
-          } catch (error) {
-            clearInterval(pollInterval)
-            throw error
-          }
-        }, 3000) // Poll every 3 seconds
-      }
-      
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      
-      devLog('Audio generation failed', {
-        prefix: 'news-media',
-        level: 'error'
-      }, { error })
-      
-      setAudioState(prev => ({
-        ...prev,
-        isGenerating: false,
-        error: error instanceof Error ? error : new Error(errorMessage)
-      }))
-      
-      // Only show toast if not already shown from specific error handling
-      if (!['ElevenLabs API key is invalid or missing', 'Rate limit exceeded', 'API configuration error'].includes(errorMessage)) {
-        toast({
-          title: 'Audio Generation Failed',
-          description: errorMessage,
-          variant: 'destructive'
-        })
-      }
-    }
-  }, [headline, audioState.isGenerating, toast])
-  
   const generateMedia = useCallback(async () => {
-    if (isThrottled()) {
-      devLog('Generation throttled', {
+    if (isThrottled() || isGeneratingRef.current) {
+      devLog('Generation throttled or already in progress', {
         prefix: 'news-media',
         level: 'info'
+      }, {
+        data: {
+          isThrottled: isThrottled(),
+          isGenerating: isGeneratingRef.current,
+          attempts: generationAttempts.current
+        }
       })
       return
     }
-    
+
     setLastGenerationTime(Date.now())
     setStatus('generating')
-    
+
     try {
-      // Generate both media types in parallel
-      const results = await Promise.allSettled([
-        generateImage(),
-        generateAudio()
-      ])
+      // Only generate media that doesn't exist
+      const promises: Promise<void>[] = []
+      
+      // Check if we need to generate image
+      if (!state.image.url && !state.image.error) {
+        devLog('Image needed', {
+          prefix: 'news-media',
+          level: 'debug'
+        }, {
+          data: {
+            hasImage: !!state.image.url,
+            hasError: !!state.image.error
+          }
+        })
+        promises.push(generateImage())
+      }
+      
+      // Check if we need to generate audio
+      if (!state.audio.url && !state.audio.error && generationAttempts.current < MAX_ATTEMPTS) {
+        devLog('Audio needed', {
+          prefix: 'news-media',
+          level: 'debug'
+        }, {
+          data: {
+            hasAudio: !!state.audio.url,
+            hasError: !!state.audio.error,
+            attempts: generationAttempts.current
+          }
+        })
+        promises.push(generateAudio())
+      }
+      
+      if (promises.length === 0) {
+        devLog('No media generation needed', {
+          prefix: 'news-media',
+          level: 'info'
+        }, {
+          data: {
+            hasImage: !!state.image.url,
+            hasAudio: !!state.audio.url,
+            imageError: !!state.image.error,
+            audioError: !!state.audio.error,
+            attempts: generationAttempts.current
+          }
+        })
+        setStatus('complete')
+        return
+      }
+      
+      // Generate missing media in parallel
+      const results = await Promise.allSettled(promises)
       
       // Check results
       const hasErrors = results.some(result => result.status === 'rejected')
@@ -257,22 +156,331 @@ export function useNewsMedia({
         level: 'error'
       }, { error })
     }
-  }, [generateImage, generateAudio])
-  
-  const retryGeneration = useCallback(async (type: 'image' | 'audio') => {
-    if (type === 'image') {
-      await generateImage()
-    } else {
-      await generateAudio()
+  }, [state, isThrottled])
+
+  const generateImage = useCallback(async () => {
+    if (state.image.isGenerating || !headline || state.image.url) return
+    
+    try {
+      setState(prev => ({
+        ...prev,
+        image: {
+          ...prev.image,
+          isGenerating: true,
+          error: null
+        }
+      }))
+      
+      // Use existing art style or get random one using the proper function
+      const artStyle = state.image.artStyle || getRandomStyle()
+      const displayStyle = ArtStyle[artStyle]
+      
+      devLog('Generating image', {
+        prefix: 'news-media',
+        level: 'debug'
+      }, {
+        data: {
+          headline,
+          artStyle,
+          displayStyle,
+          existingImage: state.image.url
+        }
+      })
+      
+      const response = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          headline,
+          style: displayStyle,
+          newsId: currentNews?.id // Pass the newsId if available
+        })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.details || errorData.error || 'Failed to generate image')
+      }
+      
+      const data = await response.json()
+      
+      // Update image state with the new URL and style
+      setState(prev => ({
+        ...prev,
+        image: {
+          ...prev.image,
+          isGenerating: false,
+          url: data.imageUrl,
+          artStyle
+        }
+      }))
+
+      // Call onImageGenerated callback if provided
+      if (data.imageUrl && onImageGenerated) {
+        await onImageGenerated(data.imageUrl)
+      }
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      
+      devLog('Image generation failed', {
+        prefix: 'news-media',
+        level: 'error'
+      }, { error })
+      
+      setState(prev => ({
+        ...prev,
+        image: {
+          ...prev.image,
+          isGenerating: false,
+          error: error instanceof Error ? error : new Error(errorMessage)
+        }
+      }))
+      
+      // Show toast for image generation failure
+      toast({
+        title: 'Image Generation Failed',
+        description: errorMessage,
+        variant: 'destructive'
+      })
     }
-  }, [generateImage, generateAudio])
+  }, [headline, state.image.isGenerating, state.image.url, state.image.artStyle, toast, currentNews?.id, onImageGenerated, getRandomStyle])
   
+  const generateAudio = useCallback(async () => {
+    // Add detailed logging for the initial check
+    devLog('Checking audio generation conditions', {
+      prefix: 'news-media',
+      level: 'debug'
+    }, {
+      data: {
+        isGenerating: state.audio.isGenerating,
+        hasAudio: !!state.audio.url,
+        isGeneratingRef: isGeneratingRef.current,
+        attempts: generationAttempts.current,
+        audioUrl: state.audio.url,
+        audioAlignment: state.audio.alignment,
+        currentNewsId: currentNews?.id
+      }
+    })
+
+    if (state.audio.isGenerating || !headline || state.audio.url || isGeneratingRef.current || generationAttempts.current >= MAX_ATTEMPTS) {
+      devLog('Audio generation skipped', {
+        prefix: 'news-media',
+        level: 'debug'
+      }, {
+        data: {
+          reason: state.audio.isGenerating ? 'already generating' :
+                 !headline ? 'no headline' :
+                 state.audio.url ? 'audio already exists' :
+                 isGeneratingRef.current ? 'generation in progress' :
+                 'max attempts reached',
+          isGenerating: state.audio.isGenerating,
+          hasAudio: !!state.audio.url,
+          isGeneratingRef: isGeneratingRef.current,
+          attempts: generationAttempts.current,
+          audioUrl: state.audio.url
+        }
+      })
+      return
+    }
+
+    // Ensure we have a valid newsId
+    if (!currentNews?.id) {
+      devLog('Audio generation skipped - no valid newsId', {
+        prefix: 'news-media',
+        level: 'error'
+      }, {
+        data: {
+          currentNews,
+          headline
+        }
+      })
+      return
+    }
+    
+    try {
+      isGeneratingRef.current = true
+      hasGeneratedAudio.current = true
+      generationAttempts.current++
+      
+      setState(prev => ({
+        ...prev,
+        audio: {
+          ...prev.audio,
+          isGenerating: true,
+          error: null
+        }
+      }))
+      
+      // Use the current news ID
+      const newsId = currentNews.id
+      
+      devLog('Generating audio', {
+        prefix: 'news-media',
+        level: 'debug'
+      }, {
+        data: {
+          headline,
+          newsId,
+          existingAudio: state.audio.url,
+          isGenerating: isGeneratingRef.current,
+          attempt: generationAttempts.current
+        }
+      })
+      
+      const result = await audioService.generateAudio({
+        headline,
+        newsId,
+        onStatusUpdate: (status) => {
+          if (status.status === 'ready' && status.audioUrl) {
+            setState(prev => ({
+              ...prev,
+              audio: {
+                ...prev.audio,
+                isGenerating: false,
+                url: status.audioUrl || undefined,
+                alignment: status.alignment || null
+              }
+            }))
+            isGeneratingRef.current = false
+          } else if (status.status === 'failed') {
+            throw new Error(status.error || 'Failed to generate audio')
+          }
+        }
+      })
+
+      if (result.status === 'ready' && result.audioUrl) {
+        setState(prev => ({
+          ...prev,
+          audio: {
+            ...prev.audio,
+            isGenerating: false,
+            url: result.audioUrl || undefined,
+            alignment: result.alignment || null
+          }
+        }))
+        isGeneratingRef.current = false
+      } else {
+        throw new Error(result.error || 'Failed to generate audio')
+      }
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate audio'
+      
+      devLog('Audio generation failed', {
+        prefix: 'news-media',
+        level: 'error'
+      }, { error })
+      
+      setState(prev => ({
+        ...prev,
+        audio: {
+          ...prev.audio,
+          isGenerating: false,
+          error: error instanceof Error ? error : new Error(errorMessage)
+        }
+      }))
+      
+      isGeneratingRef.current = false
+      
+      // Only show toast if not already shown from specific error handling
+      if (!['ElevenLabs API key is invalid or missing', 'Rate limit exceeded', 'API configuration error'].includes(errorMessage)) {
+        toast({
+          title: 'Audio Generation Failed',
+          description: errorMessage,
+          variant: 'destructive'
+        })
+      }
+    }
+  }, [headline, state.audio.isGenerating, state.audio.url, toast, currentNews, getRandomStyle])
+
+  // Update audio state when props change
+  useEffect(() => {
+    if (audioUrl !== state.audio.url || audioAlignment !== state.audio.alignment) {
+      devLog('Audio props changed, updating state', {
+        prefix: 'news-media',
+        level: 'debug'
+      }, {
+        data: {
+          oldUrl: state.audio.url,
+          newUrl: audioUrl,
+          hasAlignment: !!audioAlignment,
+          isGenerating: state.audio.isGenerating
+        }
+      })
+
+      setState(prev => ({
+        ...prev,
+        audio: {
+          ...prev.audio,
+          url: audioUrl,
+          alignment: audioAlignment,
+          isGenerating: false,
+          isPending: false,
+          error: null
+        }
+      }))
+
+      // Reset generation refs if we have new audio
+      if (audioUrl) {
+        hasGeneratedAudio.current = true
+        isGeneratingRef.current = false
+        generationAttempts.current = 0
+      }
+    }
+  }, [audioUrl, audioAlignment])
+
+  // Memoize retryGeneration to prevent unnecessary re-renders
+  const retryGeneration = useCallback(async (type: 'image' | 'audio') => {
+    if (isThrottled() || isGeneratingRef.current) return
+
+    setStatus('generating')
+    try {
+      if (type === 'image') {
+        setState(prev => ({
+          ...prev,
+          image: {
+            ...prev.image,
+            isGenerating: true,
+            isPending: true,
+            error: null
+          }
+        }))
+        generateImage()
+      } else {
+        setState(prev => ({
+          ...prev,
+          audio: {
+            ...prev.audio,
+            isGenerating: true,
+            isPending: true,
+            error: null
+          }
+        }))
+        hasGeneratedAudio.current = false // Reset the ref when retrying
+        isGeneratingRef.current = false // Reset the generating ref
+        generationAttempts.current = 0 // Reset the attempts counter
+        generateAudio()
+      }
+    } catch (error) {
+      devLog(`${type} generation failed`, {
+        prefix: 'news-media',
+        level: 'error'
+      }, { error })
+      setState(prev => ({
+        ...prev,
+        [type]: {
+          ...prev[type],
+          error: error as Error,
+          isGenerating: false,
+          isPending: false
+        }
+      }))
+    }
+  }, [generateImage, generateAudio, state, isThrottled])
+
   return {
-    state: {
-      status,
-      image: imageState,
-      audio: audioState
-    },
+    state,
     generateMedia,
     retryGeneration
   }
