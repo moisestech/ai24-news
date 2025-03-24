@@ -149,6 +149,8 @@ export interface NewsHistoryItem extends NewsItem {
     character_end_times_seconds: number[]
   }
   prompt?: string
+  created_at: string
+  user_email?: string | null
 }
 
 export function convertToNewsData(item: NewsItem): NewsData {
@@ -164,13 +166,30 @@ export function convertToNewsData(item: NewsItem): NewsData {
 export function convertNewsDataToState(data: NewsData | null): NewsState | null {
   if (!data) return null
   
-  return {
+  const newsItem: NewsItem = {
+    id: Date.now().toString(), // Generate a temporary ID
     headline: data.headline,
-    sourceName: data.source,
-    sourceUrl: '',
+    source_name: data.source,
+    source_url: '',
     url: data.url,
-    art_style: data.art_style?.toString() || 'VanGogh',
-    data: data as NewsItem,
+    published_at: new Date().toISOString(),
+    art_style: data.art_style,
+    image: {
+      url: data.image_url,
+      isGenerating: false,
+      isPending: false,
+      error: null
+    },
+    source: {
+      id: data.source,
+      name: data.source,
+      url: data.url,
+      type: 'api'
+    }
+  }
+  
+  return {
+    data: newsItem,
     isLoading: false,
     isSaving: false,
     error: null

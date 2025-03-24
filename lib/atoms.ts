@@ -38,7 +38,7 @@ export const imageGenerationAtom = atom<ImageGenerationState>({
 export interface NewsHistoryItem {
   id: string
   headline: string
-  source: string
+  source_name: string
   url: string
   image_url?: string
   audio_url?: string

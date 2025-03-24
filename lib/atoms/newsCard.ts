@@ -1,5 +1,4 @@
 import { atom } from 'jotai'
-import type { NewsItem } from '@/types/news'
 
 export type NewsCardState = {
   isActive: boolean

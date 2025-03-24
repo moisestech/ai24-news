@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-
+import { NEWS_TABLE } from '@/constants/tables'
 // Define types at the top
 export interface NewsData {
   id: string
@@ -75,7 +75,7 @@ export const newsQueries = {
   async getNewsById(id: string): Promise<NewsData | null> {
     const supabase = getSupabaseClient()
     const { data, error } = await supabase
-      .from('news_history')
+      .from(NEWS_TABLE)
       .select('*')
       .eq('id', id)
       .single()
@@ -93,7 +93,7 @@ export const newsQueries = {
   }) {
     const supabase = getSupabaseClient()
     const { data, error } = await supabase
-      .from('news_history')
+      .from(NEWS_TABLE)
       .insert([newsData])
       .select()
       .single()
@@ -105,7 +105,7 @@ export const newsQueries = {
   async fetchNewsHistory() {
     const supabase = getSupabaseClient()
     const { data, error } = await supabase
-      .from('news_history')
+      .from(NEWS_TABLE)
       .select('*')
       .order('created_at', { ascending: false })
 
@@ -116,7 +116,7 @@ export const newsQueries = {
   fetchUserNewsHistory: async (email: string) => {
     const supabase = getSupabaseClient()
     const { data, error } = await supabase
-      .from('news_history')
+      .from(NEWS_TABLE)
       .select('*')
       .eq('user_email', email)
       .order('created_at', { ascending: false })
@@ -129,7 +129,7 @@ export const newsQueries = {
   async getLatestNews(email: string) {
     const supabase = getSupabaseClient()
     const { data, error } = await supabase
-      .from('news_history')
+      .from(NEWS_TABLE)
       .select('*')
       .eq('user_email', email)
       .order('created_at', { ascending: false })

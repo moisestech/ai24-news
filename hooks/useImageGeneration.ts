@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { NEWS_TABLE } from '@/constants/tables'
 import { useAtom } from 'jotai'
 import { userLimitAtom, newsHistoryAtom } from '../lib/atoms'
+import { getSupabaseClient } from '../lib/supabase'
 import { devLog } from '@/lib/utils/log'
 import type { NewsItem } from '@/types/news'
 import { useImageUpload } from './useImageUpload'
@@ -23,120 +25,180 @@ export function useImageGeneration() {
   const [newsHistory, setNewsHistory] = useAtom(newsHistoryAtom)
   const { uploadImage } = useImageUpload()
 
-  const generateImage = async (style?: string, news?: NewsItem, prompt?: string) => {
+  const generateImage = useCallback(async (style: string, news: NewsItem, prompt?: string) => {
     if (!news || !prompt) {
-      devLog('Cannot generate image - missing news or prompt', {
-        prefix: 'useImageGeneration',
+      devLog('useImageGeneration: Cannot generate image - missing news or prompt', {
+        prefix: 'use-image-generation',
         level: 'error'
       }, {
         data: {
           hasNews: !!news,
           hasPrompt: !!prompt,
           newsId: news?.id,
-          artStyle: style
+          timestamp: new Date().toISOString()
         }
       })
       return
     }
 
-    try {
-      setImageState(prev => ({
-        ...prev,
-        isGenerating: true,
-        isPending: true,
-        error: null
-      }))
+    // Set initial state
+    setImageState(prev => ({
+      ...prev,
+      isGenerating: true,
+      isPending: false,
+      error: null
+    }))
 
-      devLog('Starting image generation', {
-        prefix: 'useImageGeneration',
+    try {
+      devLog('useImageGeneration: Starting image generation', {
+        prefix: 'use-image-generation',
         level: 'debug'
       }, {
         data: {
           newsId: news.id,
-          artStyle: style,
-          prompt
+          style,
+          hasPrompt: !!prompt,
+          prompt: prompt.substring(0, 100) + '...',
+          timestamp: new Date().toISOString()
         }
       })
 
       const response = await fetch('/api/generate-image', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           headline: news.headline,
           style,
           prompt,
           newsId: news.id
-        })
+        }),
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to generate image')
-      }
-
-      const data = await response.json()
-
-      devLog('Image generation successful, uploading to storage', {
-        prefix: 'useImageGeneration',
+      devLog('useImageGeneration: Received API response', {
+        prefix: 'use-image-generation',
         level: 'debug'
       }, {
         data: {
           newsId: news.id,
-          hasImageData: !!data.imageData
+          status: response.status,
+          ok: response.ok,
+          timestamp: new Date().toISOString()
         }
       })
 
-      // Upload the generated image to storage
+      if (!response.ok) {
+        const error = await response.json()
+        devLog('useImageGeneration: API error', {
+          prefix: 'use-image-generation',
+          level: 'error'
+        }, {
+          data: {
+            newsId: news.id,
+            error,
+            status: response.status,
+            timestamp: new Date().toISOString()
+          }
+        })
+        throw new Error(error.message || 'Failed to generate image')
+      }
+
+      const data = await response.json()
+      devLog('useImageGeneration: Image generation successful', {
+        prefix: 'use-image-generation',
+        level: 'debug'
+      }, {
+        data: {
+          newsId: news.id,
+          hasImageData: !!data.imageData,
+          timestamp: new Date().toISOString()
+        }
+      })
+
+      if (!data.imageData) {
+        throw new Error('No image data received from API')
+      }
+
+      // Set state for upload
+      setImageState(prev => ({
+        ...prev,
+        isGenerating: false,
+        isPending: true
+      }))
+
+      // Upload the image to storage
       const { publicUrl } = await uploadImage(data.imageData, news.headline, {
         newsId: news.id,
         bucket: 'news-images'
       })
 
-      devLog('Image uploaded successfully', {
-        prefix: 'useImageGeneration',
+      devLog('useImageGeneration: Image uploaded successfully', {
+        prefix: 'use-image-generation',
         level: 'debug'
       }, {
         data: {
           newsId: news.id,
-          imageUrl: publicUrl
+          publicUrl,
+          timestamp: new Date().toISOString()
         }
       })
 
-      // Update the news item in the history with the new image URL
-      setNewsHistory(prev => prev.map(item => 
-        item.id === news.id 
-          ? { ...item, image_url: publicUrl }
-          : item
-      ))
+      // Update the news item with the new image URL
+      const supabase = getSupabaseClient()
+      if (supabase) {
+        const { error } = await supabase
+          .from(NEWS_TABLE)
+          .update({ image_url: publicUrl })
+          .eq('id', news.id)
 
-      // Update the image state
-      setImageState({
+        if (error) {
+          devLog('useImageGeneration: Failed to update news with new image', {
+            prefix: 'use-image-generation',
+            level: 'error'
+          }, {
+            data: {
+              newsId: news.id,
+              error,
+              timestamp: new Date().toISOString()
+            }
+          })
+          throw error
+        }
+      }
+
+      // Set final success state
+      setImageState(prev => ({
+        ...prev,
         url: publicUrl,
-        isGenerating: false,
         isPending: false,
         error: null
-      })
-
-      // Update user's remaining limit
-      setUserLimit(prev => prev - 1)
+      }))
 
     } catch (error) {
-      devLog('Image generation failed', {
-        prefix: 'useImageGeneration',
-        level: 'error'
-      }, { error })
-      
+      // Set error state
       setImageState(prev => ({
         ...prev,
         isGenerating: false,
         isPending: false,
-        error: error instanceof Error ? error : new Error('Failed to generate image')
+        error: error instanceof Error ? error : new Error('Unknown error occurred')
       }))
+
+      devLog('useImageGeneration: Image generation failed', {
+        prefix: 'use-image-generation',
+        level: 'error'
+      }, {
+        data: {
+          newsId: news.id,
+          error,
+          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+          timestamp: new Date().toISOString()
+        }
+      })
       throw error
     }
-  }
+  }, [uploadImage]) // Add uploadImage to dependencies
 
   return {
     generateImage,

@@ -2,6 +2,7 @@
 
 import type { NewsResponse, ImageResponse, NewsState } from '@/types/news'
 import type { ArtStyleKey } from '@/types/news'
+import { NEWS_TABLE } from '@/constants/tables'
 
 // REACT
 import { useState, useCallback, useEffect } from 'react'
@@ -57,10 +58,10 @@ export function useNews() {
       
       // Save to news_history
       const { data, error: dbError } = await supabase
-        .from('news_history')
+        .from(NEWS_TABLE)
         .insert({
           headline: newsData.headline,
-          source: newsData.source,
+          source_name: newsData.source,
           url: newsData.url,
           image_url: newsData.image_url,
           audio_url: newsData.audio_url,
@@ -152,7 +153,7 @@ export function useNews() {
   const getLatestNews = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from('news_history')
+        .from(NEWS_TABLE)
         .select('*')
         .order('created_at', { ascending: false })
         .limit(1)

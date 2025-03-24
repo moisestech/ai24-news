@@ -1,11 +1,12 @@
 import { atom } from 'jotai'
 import { devLog } from '@/lib/utils/log'
 import { AudioContextManager } from '@/lib/audio/AudioContextManager'
+import type { AudioAlignment } from '@/types/audio'
 
-interface AudioTrack {
+export interface AudioTrack {
   id: string
   url: string
-  alignment: any
+  alignment: AudioAlignment | null
   isPlaying: boolean
   currentTime: number
   duration: number
@@ -16,16 +17,61 @@ interface AudioContextState {
   isInitialized: boolean
   error: Error | null
   activeTrack: AudioTrack | null
+  availableTracks: Map<string, AudioTrack>
 }
 
 // Base atoms for state
 export const audioContextStateAtom = atom<AudioContextState>({
   isInitialized: false,
   error: null,
-  activeTrack: null
+  activeTrack: null,
+  availableTracks: new Map()
 })
 
 // Action atoms
+export const registerTrackAtom = atom(
+  null,
+  async (get, set, track: AudioTrack) => {
+    const state = get(audioContextStateAtom)
+    
+    devLog('Registering audio track', {
+      prefix: 'audio-context',
+      level: 'debug'
+    }, {
+      data: {
+        trackId: track.id,
+        hasAlignment: !!track.alignment,
+        alignmentLength: track.alignment?.characters?.length
+      }
+    })
+
+    set(audioContextStateAtom, {
+      ...state,
+      availableTracks: new Map(state.availableTracks).set(track.id, track)
+    })
+  }
+)
+
+export const unregisterTrackAtom = atom(
+  null,
+  async (get, set, trackId: string) => {
+    const state = get(audioContextStateAtom)
+    
+    devLog('Unregistering audio track', {
+      prefix: 'audio-context',
+      level: 'debug'
+    }, { trackId })
+
+    const newTracks = new Map(state.availableTracks)
+    newTracks.delete(trackId)
+    
+    set(audioContextStateAtom, {
+      ...state,
+      availableTracks: newTracks
+    })
+  }
+)
+
 export const initializeAudioContextAtom = atom(
   null,
   async (get, set) => {
@@ -77,7 +123,7 @@ export const initializeAudioContextAtom = atom(
 
 export const playTrackAtom = atom(
   null,
-  async (get, set, track: AudioTrack) => {
+  async (get, set, trackId: string) => {
     try {
       const state = get(audioContextStateAtom)
       const manager = AudioContextManager.getInstance()
@@ -85,10 +131,13 @@ export const playTrackAtom = atom(
       devLog('Starting playTrack', {
         prefix: 'audio-context',
         level: 'debug'
-      }, {
-        trackId: track.id,
-        url: track.url
-      })
+      }, { trackId })
+
+      // Get track from available tracks
+      const track = state.availableTracks.get(trackId)
+      if (!track) {
+        throw new Error(`Track ${trackId} not found`)
+      }
 
       // Stop current track if playing
       if (state.activeTrack?.isPlaying) {
@@ -125,7 +174,7 @@ export const playTrackAtom = atom(
         prefix: 'audio-context',
         level: 'info'
       }, { 
-        trackId: track.id,
+        trackId,
         hasAnalyzer: !!analyzer,
         audioState: {
           currentTime: audioElement.currentTime,
@@ -363,7 +412,8 @@ export const cleanupAudioContextAtom = atom(
     set(audioContextStateAtom, {
       isInitialized: false,
       error: null,
-      activeTrack: null
+      activeTrack: null,
+      availableTracks: new Map()
     })
 
     devLog('Audio context cleaned up', {

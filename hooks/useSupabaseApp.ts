@@ -11,7 +11,7 @@ import { useEffect, useMemo } from 'react'
 import { getClientSupabase } from '@/lib/supabase/client'
 import { store } from '@/lib/store'
 import type { SupabaseClient } from '@supabase/supabase-js'
-
+import { NEWS_TABLE } from '@/constants/tables'
 interface NewsHistoryItem {
   headline: string
   source: string
@@ -56,10 +56,10 @@ export function useSupabaseApp() {
     try {
       // First check if entry exists
       const { data: existing } = await supabase
-        .from('news_history')
+        .from(NEWS_TABLE)
         .select('*')
         .eq('headline', news.headline)
-        .eq('source', news.source)
+        .eq('source_name', news.source)
         .single()
 
       devLog('Fetched existing news', {
@@ -79,14 +79,14 @@ export function useSupabaseApp() {
         // Only update if image_url is different
         if (existing.image_url !== news.image_url) {
           const { data, error } = await supabase
-            .from('news_history')
+            .from(NEWS_TABLE)
             .update({
               image_url: news.image_url,
               art_style: news.art_style,
               created_at: new Date().toISOString()
             })
             .eq('headline', news.headline)
-            .eq('source', news.source)
+            .eq('source_name', news.source)
             .select()
             .single()
 
@@ -99,7 +99,7 @@ export function useSupabaseApp() {
 
       // If no existing entry, insert new one
       const { data, error } = await supabase
-        .from('news_history')
+        .from(NEWS_TABLE)
         .insert([{
           ...news,
           user_email: email || null
