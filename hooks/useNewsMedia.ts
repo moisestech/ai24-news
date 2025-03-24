@@ -11,7 +11,7 @@ import type { ArtStyleKey } from '@/types/art'
 
 interface UseNewsMediaProps {
   headline: string
-  source: string
+  source_name: string
   url: string
   imageUrl?: string
   audioUrl?: string
@@ -29,7 +29,7 @@ interface NewsMediaState {
 
 export function useNewsMedia({
   headline,
-  source,
+  source_name,
   url,
   imageUrl,
   audioUrl,

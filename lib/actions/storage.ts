@@ -27,7 +27,13 @@ export async function uploadToStorage(
         env: {
           NODE_ENV: process.env.NODE_ENV,
           MOCK_API: process.env.NEXT_PUBLIC_MOCK_API
-        }
+        },
+        options: {
+          bucket,
+          path,
+          fullPath
+        },
+        timestamp: new Date().toISOString()
       }
     })
 
@@ -35,6 +41,18 @@ export async function uploadToStorage(
     const buffer = imageData instanceof Blob 
       ? Buffer.from(await imageData.arrayBuffer())
       : imageData
+
+    devLog('Converting image data to buffer', {
+      prefix: 'storage-action',
+      level: 'debug'
+    }, {
+      data: {
+        fileName,
+        bufferSize: buffer.length,
+        originalType: imageData.constructor.name,
+        timestamp: new Date().toISOString()
+      }
+    })
 
     const { data, error } = await getAdminSupabase().storage
       .from(bucket)
@@ -52,15 +70,43 @@ export async function uploadToStorage(
         data: {
           fileName,
           bucket,
-          path: fullPath
+          path: fullPath,
+          bufferSize: buffer.length,
+          timestamp: new Date().toISOString()
         }
       })
       throw error
     }
 
+    devLog('File uploaded successfully', {
+      prefix: 'storage-action',
+      level: 'debug'
+    }, {
+      data: {
+        fileName,
+        bucket,
+        path: fullPath,
+        uploadData: data,
+        timestamp: new Date().toISOString()
+      }
+    })
+
     const { data: urlData } = getAdminSupabase().storage
       .from(bucket)
       .getPublicUrl(fullPath)
+
+    devLog('Generated public URL', {
+      prefix: 'storage-action',
+      level: 'debug'
+    }, {
+      data: {
+        fileName,
+        bucket,
+        path: fullPath,
+        publicUrl: urlData.publicUrl,
+        timestamp: new Date().toISOString()
+      }
+    })
 
     return urlData.publicUrl
 
@@ -72,7 +118,9 @@ export async function uploadToStorage(
       error,
       data: {
         fileName,
-        dataType: imageData.constructor.name
+        dataType: imageData.constructor.name,
+        size: imageData instanceof Blob ? imageData.size : 'unknown',
+        timestamp: new Date().toISOString()
       }
     })
     throw new Error('Failed to upload image')
@@ -117,13 +165,12 @@ export async function uploadNewsImage(
 export async function uploadImageToStorage(
   base64Data: string,
   headline: string,
-  options: { bucket?: string; path?: string; contentType?: string; newsId?: string } = {}
+  options: { bucket?: string; contentType?: string; newsId?: string } = {}
 ): Promise<string> {
   try {
     const {
       bucket = 'news-images',
-      path = 'generated',
-      contentType = 'image/jpeg',
+      contentType = 'image/png',
       newsId
     } = options
 
@@ -132,8 +179,7 @@ export async function uploadImageToStorage(
 
     // Generate filename
     const timestamp = Date.now()
-    const fileName = `ai24live_${headline.slice(0, 50).replace(/[^a-z0-9]/gi, '_')}_${timestamp}.jpg`
-    const fullPath = fileName
+    const fileName = `ai24live_${headline.slice(0, 50).replace(/[^a-z0-9]/gi, '_')}_${timestamp}.png`
 
     devLog('Uploading to Supabase storage', {
       prefix: 'storage-action',
@@ -142,16 +188,16 @@ export async function uploadImageToStorage(
       data: {
         fileName,
         bucket,
-        path: fullPath,
         newsId,
-        bufferSize: buffer.length
+        bufferSize: buffer.length,
+        contentType
       }
     })
 
     // Upload to Supabase storage using admin client
     const { data: uploadData, error: uploadError } = await getAdminSupabase().storage
       .from(bucket)
-      .upload(fullPath, buffer, {
+      .upload(fileName, buffer, {
         contentType,
         upsert: true,
         cacheControl: '3600'
@@ -165,7 +211,7 @@ export async function uploadImageToStorage(
         error: uploadError,
         details: {
           bucket,
-          path: fullPath,
+          fileName,
           contentType,
           bufferSize: buffer.length,
           newsId
@@ -177,7 +223,7 @@ export async function uploadImageToStorage(
     // Get public URL
     const { data: { publicUrl } } = getAdminSupabase().storage
       .from(bucket)
-      .getPublicUrl(fullPath)
+      .getPublicUrl(fileName)
 
     devLog('Image uploaded successfully', {
       prefix: 'storage-action',
@@ -186,7 +232,8 @@ export async function uploadImageToStorage(
       data: {
         publicUrl,
         uploadData,
-        newsId
+        newsId,
+        fileName
       }
     })
 

@@ -231,7 +231,7 @@ export const subscriptionQueries = {
 export async function shouldFetchNewHeadline() {
   const supabase = getSupabaseClient()
   const { data: latestNews } = await supabase
-    .from('news')
+    .from(NEWS_TABLE)
     .select('created_at')
     .order('created_at', { ascending: false })
     .limit(1);
@@ -251,7 +251,7 @@ export async function saveNewsWithStyle(
   artStyle: { id: string; name: string }
 ) {
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from('news').insert([{ 
+  const { error } = await supabase.from(NEWS_TABLE).insert([{ 
     title, 
     image,
     art_style_id: artStyle.id,

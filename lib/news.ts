@@ -1,5 +1,6 @@
 import { devLog } from '@/lib/utils/log'
 import type { NewsResponse, NewsAPIResponse } from '@/types/news'
+import { NEWS_API_CONFIG } from '@/lib/config/news-sources'
 
 interface MediastackResponse {
   data: Array<{
@@ -24,9 +25,10 @@ export async function fetchLatestNews(): Promise<NewsResponse> {
     const params = new URLSearchParams({
       access_key: process.env.MEDIASTACK_API_KEY || '',
       categories: 'general',
-      languages: 'en',
+      languages: NEWS_API_CONFIG.defaultLanguage.join(','),
       limit: '1',
-      sort: 'published_desc'
+      sort: 'published_desc',
+      countries: NEWS_API_CONFIG.defaultCountries.join(',')
     })
 
     const url = `${baseUrl}?${params.toString()}`
@@ -36,7 +38,7 @@ export async function fetchLatestNews(): Promise<NewsResponse> {
       url: baseUrl,
       params: {
         categories: 'general',
-        languages: 'en',
+        languages: NEWS_API_CONFIG.defaultLanguage.join(','),
         limit: '1',
         sort: 'published_desc',
         access_key: '[REDACTED]'
@@ -121,7 +123,7 @@ export async function fetchLatestNews(): Promise<NewsResponse> {
 
 export async function fetchNewsBySource(source: string): Promise<NewsResponse> {
   try {
-    const response = await fetch(`http://api.mediastack.com/v1/news?sources=${source}`, {
+    const response = await fetch(`http://api.mediastack.com/v1/news?sources=${source}&languages=en&countries=us,gb`, {
       headers: {
         'access_key': process.env.MEDIASTACK_API_KEY || '',
       },

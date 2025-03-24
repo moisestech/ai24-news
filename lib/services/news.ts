@@ -34,7 +34,7 @@ export class NewsService {
   private async fetchNews(filter: NewsSourceFilter = {}): Promise<any> {
     const params = new URLSearchParams({
       access_key: this.apiKey,
-      languages: NEWS_API_CONFIG.defaultLanguage,
+      languages: NEWS_API_CONFIG.defaultLanguage.join(','),
       countries: NEWS_API_CONFIG.defaultCountries.join(','),
       categories: NEWS_API_CONFIG.defaultCategories.join(','),
       ...filter

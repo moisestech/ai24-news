@@ -1,16 +1,19 @@
 import { devLog } from '@/lib/utils/log'
 import { ArtStyle, type ArtStyleKey, type ArtStyleValue } from '@/types/art'
 import { promptService } from './prompt'
+import { saveNewsImage } from '@/lib/actions/news'
+import type { NewsItem } from '@/types/news'
 
 interface MediaGenerationConfig {
   headline: string
   artStyle: ArtStyleKey
   newsId?: string
   onProgress?: (progress: MediaGenerationProgress) => void
+  onNewsUpdated?: (news: NewsItem) => void
 }
 
 interface MediaGenerationProgress {
-  stage: 'prompt' | 'image' | 'audio' | 'complete'
+  stage: 'prompt' | 'image' | 'upload' | 'audio' | 'complete'
   progress: number
   message: string
   error?: string
@@ -52,7 +55,7 @@ export class MediaService {
         artStyle: config.artStyle
       })
 
-      // Stage 2: Generate image through API
+      // Stage 2: Generate image
       progress('image', 0.4, 'Creating artistic image...')
       const imageResponse = await fetch('/api/generate-image', {
         method: 'POST',
@@ -70,9 +73,52 @@ export class MediaService {
         throw new Error(error.message || 'Failed to generate image')
       }
 
-      const imageResult = await imageResponse.json()
+      const { imageData } = await imageResponse.json()
 
-      // Stage 3: Generate audio through API
+      if (!imageData) {
+        throw new Error('No image data received from API')
+      }
+
+      // Stage 3: Upload image
+      progress('upload', 0.6, 'Uploading generated image...')
+      const uploadResponse = await fetch('/api/upload-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageData,
+          headline: config.headline,
+          newsId: config.newsId
+        })
+      })
+
+      devLog('MediaService: Upload response', {
+        prefix: 'media-service',
+        level: 'debug'
+      }, {
+        data: {
+          uploadResponse
+        }
+      })
+
+      if (!uploadResponse.ok) {
+        const error = await uploadResponse.json()
+        throw new Error(error.message || 'Failed to upload image')
+      }
+
+      const { imageUrl } = await uploadResponse.json()
+
+      // Save image URL to database if newsId is provided
+      if (config.newsId) {
+        progress('upload', 0.7, 'Saving image URL...')
+        const updatedNews = await saveNewsImage(config.newsId, imageUrl)
+        
+        // Call the callback with the updated news item
+        if (config.onNewsUpdated) {
+          config.onNewsUpdated(updatedNews)
+        }
+      }
+
+      // Stage 4: Generate audio through API
       progress('audio', 0.8, 'Generating audio narration...')
       const audioResponse = await fetch('/api/generate-audio', {
         method: 'POST',
@@ -90,11 +136,11 @@ export class MediaService {
 
       const audioResult = await audioResponse.json()
 
-      // Stage 4: Complete
+      // Stage 5: Complete
       progress('complete', 1, 'Media generation complete!')
 
       return {
-        imageUrl: imageResult.imageUrl,
+        imageUrl,
         audioUrl: audioResult.audioUrl,
         prompt: promptResult.prompt,
         metadata: {
