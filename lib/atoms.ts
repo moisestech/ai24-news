@@ -43,12 +43,10 @@ export interface NewsHistoryItem {
   image_url?: string
   audio_url?: string
   audio_alignment?: {
-    characters: Array<{
-      char: string
-      start: number
-      end: number
-    }>
-  }
+    characters: string[]
+    character_start_times_seconds: number[]
+    character_end_times_seconds: number[]
+  } | null
   art_style?: string
   prompt?: string
   created_at: string

@@ -46,6 +46,35 @@ export function useNewsMedia({
   const generationAttempts = useRef(0)
   const [status, setStatus] = useState<'idle' | 'generating' | 'complete' | 'error'>('idle')
   
+  // Log initial props
+  useEffect(() => {
+    devLog('useNewsMedia: Initial props', {
+      prefix: 'news-media',
+      level: 'debug'
+    }, {
+      data: {
+        headline,
+        source_name,
+        url,
+        hasImage: !!imageUrl,
+        hasAudio: !!audioUrl,
+        hasAudioAlignment: !!audioAlignment,
+        audioAlignmentType: audioAlignment ? typeof audioAlignment : 'undefined',
+        audioAlignmentKeys: audioAlignment ? Object.keys(audioAlignment) : [],
+        audioAlignmentStructure: audioAlignment ? {
+          charactersLength: audioAlignment.characters?.length,
+          startTimesLength: audioAlignment.character_start_times_seconds?.length,
+          endTimesLength: audioAlignment.character_end_times_seconds?.length,
+          sampleCharacters: audioAlignment.characters?.slice(0, 5),
+          sampleStartTimes: audioAlignment.character_start_times_seconds?.slice(0, 5),
+          sampleEndTimes: audioAlignment.character_end_times_seconds?.slice(0, 5)
+        } : null,
+        currentNewsId: currentNews?.id,
+        artStyle
+      }
+    })
+  }, [headline, source_name, url, imageUrl, audioUrl, audioAlignment, currentNews?.id, artStyle])
+
   const [state, setState] = useState<NewsMediaState>({
     image: {
       url: imageUrl,
@@ -61,6 +90,44 @@ export function useNewsMedia({
       error: null
     }
   })
+
+  // Log state changes
+  useEffect(() => {
+    devLog('useNewsMedia: State updated', {
+      prefix: 'news-media',
+      level: 'debug'
+    }, {
+      data: {
+        status,
+        image: {
+          url: state.image.url,
+          isGenerating: state.image.isGenerating,
+          isPending: state.image.isPending,
+          hasError: !!state.image.error
+        },
+        audio: {
+          url: state.audio.url,
+          hasAlignment: !!state.audio.alignment,
+          alignmentType: state.audio.alignment ? typeof state.audio.alignment : 'undefined',
+          alignmentKeys: state.audio.alignment ? Object.keys(state.audio.alignment) : [],
+          alignmentStructure: state.audio.alignment ? {
+            charactersLength: state.audio.alignment.characters?.length,
+            startTimesLength: state.audio.alignment.character_start_times_seconds?.length,
+            endTimesLength: state.audio.alignment.character_end_times_seconds?.length,
+            sampleCharacters: state.audio.alignment.characters?.slice(0, 5),
+            sampleStartTimes: state.audio.alignment.character_start_times_seconds?.slice(0, 5),
+            sampleEndTimes: state.audio.alignment.character_end_times_seconds?.slice(0, 5)
+          } : null,
+          isGenerating: state.audio.isGenerating,
+          isPending: state.audio.isPending,
+          hasError: !!state.audio.error
+        },
+        hasGeneratedAudio: hasGeneratedAudio.current,
+        isGeneratingRef: isGeneratingRef.current,
+        generationAttempts: generationAttempts.current
+      }
+    })
+  }, [state, status])
 
   // Throttle to prevent excessive API calls
   const [lastGenerationTime, setLastGenerationTime] = useState<number>(0)

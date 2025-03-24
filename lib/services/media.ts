@@ -107,17 +107,6 @@ export class MediaService {
 
       const { imageUrl } = await uploadResponse.json()
 
-      // Save image URL to database if newsId is provided
-      if (config.newsId) {
-        progress('upload', 0.7, 'Saving image URL...')
-        const updatedNews = await saveNewsImage(config.newsId, imageUrl)
-        
-        // Call the callback with the updated news item
-        if (config.onNewsUpdated) {
-          config.onNewsUpdated(updatedNews)
-        }
-      }
-
       // Stage 4: Generate audio through API
       progress('audio', 0.8, 'Generating audio narration...')
       const audioResponse = await fetch('/api/generate-audio', {
@@ -136,7 +125,53 @@ export class MediaService {
 
       const audioResult = await audioResponse.json()
 
-      // Stage 5: Complete
+      devLog('Audio generation result', {
+        prefix: 'media-service',
+        level: 'debug'
+      }, {
+        data: {
+          hasAudioUrl: !!audioResult.audioUrl,
+          hasAlignment: !!audioResult.alignment,
+          alignmentType: audioResult.alignment ? typeof audioResult.alignment : 'undefined',
+          alignmentKeys: audioResult.alignment ? Object.keys(audioResult.alignment) : []
+        }
+      })
+
+      // Stage 5: Update database with all media data
+      if (config.newsId) {
+        progress('complete', 0.9, 'Saving media data...')
+        const updatedNews = await this.updateNewsWithMedia(config.newsId, {
+          imageUrl,
+          audioUrl: audioResult.audioUrl,
+          audioAlignment: audioResult.alignment ? {
+            characters: audioResult.alignment.characters || [],
+            character_start_times_seconds: audioResult.alignment.character_start_times_seconds || [],
+            character_end_times_seconds: audioResult.alignment.character_end_times_seconds || []
+          } : undefined,
+          prompt: promptResult.prompt
+        })
+        
+        devLog('News updated with media', {
+          prefix: 'media-service',
+          level: 'debug'
+        }, {
+          data: {
+            newsId: config.newsId,
+            hasImage: !!imageUrl,
+            hasAudio: !!audioResult.audioUrl,
+            hasAlignment: !!audioResult.alignment,
+            alignmentType: audioResult.alignment ? typeof audioResult.alignment : 'undefined',
+            alignmentKeys: audioResult.alignment ? Object.keys(audioResult.alignment) : []
+          }
+        })
+
+        // Call the callback with the updated news item
+        if (config.onNewsUpdated) {
+          config.onNewsUpdated(updatedNews)
+        }
+      }
+
+      // Stage 6: Complete
       progress('complete', 1, 'Media generation complete!')
 
       return {
@@ -153,6 +188,40 @@ export class MediaService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       progress('complete', 0, 'Media generation failed', errorMessage)
+      throw error
+    }
+  }
+
+  private async updateNewsWithMedia(
+    newsId: string,
+    mediaData: {
+      imageUrl?: string
+      audioUrl?: string
+      audioAlignment?: any
+      prompt?: string
+    }
+  ): Promise<NewsItem> {
+    try {
+      const response = await fetch('/api/update-news-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          newsId,
+          ...mediaData
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.message || 'Failed to update news media')
+      }
+
+      return await response.json()
+    } catch (error) {
+      devLog('Failed to update news media', {
+        prefix: 'media-service',
+        level: 'error'
+      }, { error })
       throw error
     }
   }

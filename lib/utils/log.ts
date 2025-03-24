@@ -11,12 +11,9 @@ interface DevLogOptions {
 
 // Add a configuration object to control logging
 const LOG_CONFIG = {
-  enabledPrefixes: process.env.NEXT_PUBLIC_ENABLED_LOG_PREFIXES?.split(',') || [
-    '*',
-  ],
-  disabledPrefixes:
-    process.env.NEXT_PUBLIC_DISABLED_LOG_PREFIXES?.split(',') || [],
-  minLevel: (process.env.NEXT_PUBLIC_MIN_LOG_LEVEL as LogLevel) || 'info',
+  enabledPrefixes: (process.env.NEXT_PUBLIC_ENABLED_LOG_PREFIXES || '*').split(','),
+  disabledPrefixes: (process.env.NEXT_PUBLIC_DISABLED_LOG_PREFIXES || '').split(','),
+  minLevel: (process.env.NEXT_PUBLIC_MIN_LOG_LEVEL || 'debug') as LogLevel,
   // Map log levels to numeric values for comparison
   logLevelSeverity: {
     debug: 0,
@@ -64,6 +61,25 @@ export const devLog = (
   options?: DevLogOptions | LogPrefix,
   ...args: any[]
 ) => {
+  // Test log to verify devLog is being called
+  console.log('devLog called', {
+    message,
+    options,
+    args,
+    config: {
+      enabledPrefixes: LOG_CONFIG.enabledPrefixes,
+      disabledPrefixes: LOG_CONFIG.disabledPrefixes,
+      minLevel: LOG_CONFIG.minLevel,
+      env: {
+        NODE_ENV: process.env.NODE_ENV,
+        NEXT_PUBLIC_DEBUG_MODE: process.env.NEXT_PUBLIC_DEBUG_MODE,
+        NEXT_PUBLIC_MIN_LOG_LEVEL: process.env.NEXT_PUBLIC_MIN_LOG_LEVEL,
+        NEXT_PUBLIC_ENABLED_LOG_PREFIXES: process.env.NEXT_PUBLIC_ENABLED_LOG_PREFIXES,
+        NEXT_PUBLIC_DISABLED_LOG_PREFIXES: process.env.NEXT_PUBLIC_DISABLED_LOG_PREFIXES
+      }
+    }
+  })
+
   if (process.env.NODE_ENV === 'production') return;
 
   // Handle case where options is just a string prefix
@@ -73,7 +89,10 @@ export const devLog = (
   const { level = 'info', prefix = '', timestamp = true } = opts;
 
   // Check if this log should be shown
-  if (!shouldLog(prefix, level)) return;
+  if (!shouldLog(prefix, level)) {
+    console.log('Log filtered out:', { prefix, level, config: LOG_CONFIG });
+    return;
+  }
 
   const time = timestamp ? `[${new Date().toISOString()}]` : '';
   const tag = prefix ? `[${prefix}]` : '';

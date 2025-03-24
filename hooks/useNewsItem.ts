@@ -24,7 +24,19 @@ export function useNewsItem({ initialData, onUpdate }: UseNewsItemProps) {
         initialData,
         imageUrl: initialData?.image_url,
         source_name: initialData?.source_name,
-        url: initialData?.url
+        url: initialData?.url,
+        hasAudio: !!initialData?.audio_url,
+        hasAudioAlignment: !!initialData?.audio_alignment,
+        audioAlignmentType: initialData?.audio_alignment ? typeof initialData.audio_alignment : 'undefined',
+        audioAlignmentKeys: initialData?.audio_alignment ? Object.keys(initialData.audio_alignment) : [],
+        audioAlignmentStructure: initialData?.audio_alignment ? {
+          charactersLength: initialData.audio_alignment.characters?.length,
+          startTimesLength: initialData.audio_alignment.character_start_times_seconds?.length,
+          endTimesLength: initialData.audio_alignment.character_end_times_seconds?.length,
+          sampleCharacters: initialData.audio_alignment.characters?.slice(0, 5),
+          sampleStartTimes: initialData.audio_alignment.character_start_times_seconds?.slice(0, 5),
+          sampleEndTimes: initialData.audio_alignment.character_end_times_seconds?.slice(0, 5)
+        } : null
       }
     })
   }, [initialData])
@@ -41,7 +53,19 @@ export function useNewsItem({ initialData, onUpdate }: UseNewsItemProps) {
         initialData,
         imageUrl: initialData.image_url,
         source_name: initialData.source_name,
-        url: initialData.url
+        url: initialData.url,
+        hasAudio: !!initialData.audio_url,
+        hasAudioAlignment: !!initialData.audio_alignment,
+        audioAlignmentType: initialData.audio_alignment ? typeof initialData.audio_alignment : 'undefined',
+        audioAlignmentKeys: initialData.audio_alignment ? Object.keys(initialData.audio_alignment) : [],
+        audioAlignmentStructure: initialData.audio_alignment ? {
+          charactersLength: initialData.audio_alignment.characters?.length,
+          startTimesLength: initialData.audio_alignment.character_start_times_seconds?.length,
+          endTimesLength: initialData.audio_alignment.character_end_times_seconds?.length,
+          sampleCharacters: initialData.audio_alignment.characters?.slice(0, 5),
+          sampleStartTimes: initialData.audio_alignment.character_start_times_seconds?.slice(0, 5),
+          sampleEndTimes: initialData.audio_alignment.character_end_times_seconds?.slice(0, 5)
+        } : null
       }
     })
 
@@ -80,6 +104,7 @@ export function useNewsItem({ initialData, onUpdate }: UseNewsItemProps) {
         imageUrl: transformed.image.url,
         source: transformed.source,
         url: transformed.url,
+        hasAudio: !!transformed.audio_url,
         hasAudioAlignment: !!transformed.audio_alignment,
         audioAlignment: transformed.audio_alignment ? {
           charactersLength: transformed.audio_alignment.characters.length,
@@ -106,7 +131,17 @@ export function useNewsItem({ initialData, onUpdate }: UseNewsItemProps) {
           previousItem: newsItem,
           newItem: transformedData,
           hasImage: !!transformedData?.image.url,
-          imageUrl: transformedData?.image.url
+          imageUrl: transformedData?.image.url,
+          hasAudio: !!transformedData?.audio_url,
+          hasAudioAlignment: !!transformedData?.audio_alignment,
+          audioAlignment: transformedData?.audio_alignment ? {
+            charactersLength: transformedData.audio_alignment.characters.length,
+            startTimesLength: transformedData.audio_alignment.character_start_times_seconds.length,
+            endTimesLength: transformedData.audio_alignment.character_end_times_seconds.length,
+            sampleCharacters: transformedData.audio_alignment.characters.slice(0, 5),
+            sampleStartTimes: transformedData.audio_alignment.character_start_times_seconds.slice(0, 5),
+            sampleEndTimes: transformedData.audio_alignment.character_end_times_seconds.slice(0, 5)
+          } : null
         }
       })
 
