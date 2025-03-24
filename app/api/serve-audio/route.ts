@@ -8,9 +8,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/serve-audio?url=${encodeURIComponent(url)}`, {
+    // Directly fetch the audio file
+    const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+        'Range': request.headers.get('range') || 'bytes=0-'
       }
     })
 
@@ -20,18 +21,26 @@ export async function GET(request: NextRequest) {
 
     const audioBuffer = await response.arrayBuffer()
     const contentType = response.headers.get('content-type') || 'audio/mpeg'
+    const contentLength = response.headers.get('content-length')
+    const contentRange = response.headers.get('content-range')
 
-    return new NextResponse(audioBuffer, {
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': audioBuffer.byteLength.toString(),
-        'Cache-Control': 'public, max-age=3600',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-        'Access-Control-Allow-Headers': 'Range',
-        'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Content-Type'
-      }
-    })
+    const headers = {
+      'Content-Type': contentType,
+      'Content-Length': contentLength || audioBuffer.byteLength.toString(),
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=3600',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range',
+      'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Content-Type'
+    }
+
+    // Add Content-Range header if it exists in the response
+    if (contentRange) {
+      headers['Content-Range'] = contentRange
+    }
+
+    return new NextResponse(audioBuffer, { headers })
   } catch (error) {
     console.error('Error serving audio:', error)
     return new NextResponse('Failed to serve audio', { status: 500 })

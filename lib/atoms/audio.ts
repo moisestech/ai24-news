@@ -1,50 +1,64 @@
 import { atom } from 'jotai'
 import { devLog } from '@/lib/utils/log'
+import { AudioContextManager } from '@/lib/audio/AudioContextManager'
+
+interface AudioTrack {
+  id: string
+  url: string
+  alignment: any
+  isPlaying: boolean
+  currentTime: number
+  duration: number
+  volume: number
+}
 
 interface AudioContextState {
   isInitialized: boolean
   error: Error | null
-  activeConnections: Map<string, {
-    analyzer: AnalyserNode
-    dataArray: Uint8Array
-    source: MediaElementAudioSourceNode
-    gainNode: GainNode
-  }>
+  activeTrack: AudioTrack | null
 }
 
 // Base atoms for state
-export const audioContextAtom = atom<AudioContext | null>(null)
-export const isAudioContextInitializedAtom = atom<boolean>(false)
-export const audioContextErrorAtom = atom<Error | null>(null)
-export const activeConnectionsAtom = atom<Map<string, {
-  analyzer: AnalyserNode
-  dataArray: Uint8Array
-  source: MediaElementAudioSourceNode
-  gainNode: GainNode
-}>>(new Map())
-
-// Derived atoms for computed values
-export const audioContextStateAtom = atom((get) => ({
-  isInitialized: get(isAudioContextInitializedAtom),
-  error: get(audioContextErrorAtom),
-  activeConnections: get(activeConnectionsAtom)
-}))
+export const audioContextStateAtom = atom<AudioContextState>({
+  isInitialized: false,
+  error: null,
+  activeTrack: null
+})
 
 // Action atoms
 export const initializeAudioContextAtom = atom(
   null,
   async (get, set) => {
     try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const state = get(audioContextStateAtom)
+      const manager = AudioContextManager.getInstance()
       
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume()
+      devLog('Initializing AudioContext', {
+        prefix: 'audio-context',
+        level: 'debug'
+      }, {
+        currentState: {
+          isInitialized: state.isInitialized,
+          hasActiveTrack: !!state.activeTrack
+        }
+      })
+
+      if (state.isInitialized) {
+        devLog('AudioContext already initialized', {
+          prefix: 'audio-context',
+          level: 'debug'
+        })
+        return
       }
 
-      set(audioContextAtom, audioContext)
-      set(isAudioContextInitializedAtom, true)
+      await manager.initialize()
       
-      devLog('AudioContext initialized', {
+      set(audioContextStateAtom, {
+        ...state,
+        isInitialized: true
+      })
+      
+      devLog('AudioContext initialization complete', {
         prefix: 'audio-context',
         level: 'info'
       })
@@ -53,7 +67,289 @@ export const initializeAudioContextAtom = atom(
         prefix: 'audio-context',
         level: 'error'
       }, { error })
-      set(audioContextErrorAtom, error as Error)
+      set(audioContextStateAtom, {
+        ...get(audioContextStateAtom),
+        error: error as Error
+      })
+    }
+  }
+)
+
+export const playTrackAtom = atom(
+  null,
+  async (get, set, track: AudioTrack) => {
+    try {
+      const state = get(audioContextStateAtom)
+      const manager = AudioContextManager.getInstance()
+      
+      devLog('Starting playTrack', {
+        prefix: 'audio-context',
+        level: 'debug'
+      }, {
+        trackId: track.id,
+        url: track.url
+      })
+
+      // Stop current track if playing
+      if (state.activeTrack?.isPlaying) {
+        await set(stopTrackAtom)
+      }
+
+      // Initialize context if needed
+      if (!state.isInitialized) {
+        await set(initializeAudioContextAtom)
+      }
+
+      // Create audio element and get analyzer
+      const audioElement = new Audio(track.url)
+      audioElement.crossOrigin = 'anonymous'
+      
+      const analyzer = await manager.createAnalyzer(audioElement)
+      if (!analyzer) {
+        throw new Error('Failed to create audio analyzer')
+      }
+
+      // Start playback
+      await audioElement.play()
+
+      set(audioContextStateAtom, {
+        ...state,
+        activeTrack: {
+          ...track,
+          isPlaying: true,
+          currentTime: 0
+        }
+      })
+
+      devLog('Track playback started', {
+        prefix: 'audio-context',
+        level: 'info'
+      }, { 
+        trackId: track.id,
+        hasAnalyzer: !!analyzer,
+        audioState: {
+          currentTime: audioElement.currentTime,
+          duration: audioElement.duration,
+          readyState: audioElement.readyState
+        }
+      })
+
+    } catch (error) {
+      devLog('Failed to play track', {
+        prefix: 'audio-context',
+        level: 'error'
+      }, { error })
+      set(audioContextStateAtom, {
+        ...get(audioContextStateAtom),
+        error: error as Error
+      })
+    }
+  }
+)
+
+export const stopTrackAtom = atom(
+  null,
+  async (get, set) => {
+    const state = get(audioContextStateAtom)
+    const manager = AudioContextManager.getInstance()
+    
+    if (state.activeTrack) {
+      // Clean up the audio context
+      manager.cleanup()
+      
+      set(audioContextStateAtom, {
+        ...state,
+        activeTrack: null
+      })
+
+      devLog('Track stopped and cleaned up', {
+        prefix: 'audio-context',
+        level: 'info'
+      })
+    }
+  }
+)
+
+export const pauseTrackAtom = atom(
+  null,
+  async (get, set) => {
+    const state = get(audioContextStateAtom)
+    const manager = AudioContextManager.getInstance()
+    
+    if (state.activeTrack?.isPlaying) {
+      // Get the current connection
+      const connection = Array.from(manager.getState().activeConnections.values())
+        .find(conn => conn.audioElement.src === state.activeTrack?.url)
+
+      if (connection) {
+        connection.audioElement.pause()
+      }
+
+      set(audioContextStateAtom, {
+        ...state,
+        activeTrack: {
+          ...state.activeTrack,
+          isPlaying: false
+        }
+      })
+
+      devLog('Track paused', {
+        prefix: 'audio-context',
+        level: 'info'
+      })
+    }
+  }
+)
+
+export const resumeTrackAtom = atom(
+  null,
+  async (get, set) => {
+    const state = get(audioContextStateAtom)
+    const manager = AudioContextManager.getInstance()
+
+    devLog('Attempting to resume track', {
+      prefix: 'audio-context',
+      level: 'debug'
+    }, { currentState: state })
+
+    if (!state.activeTrack) {
+      devLog('No active track to resume', {
+        prefix: 'audio-context',
+        level: 'error'
+      })
+      return
+    }
+
+    try {
+      // Get the current connection
+      const connection = Array.from(manager.getState().activeConnections.values())
+        .find(conn => conn.audioElement.src === state.activeTrack?.url)
+
+      if (!connection) {
+        // If no connection exists, create a new one
+        const audioElement = new Audio(state.activeTrack.url)
+        audioElement.crossOrigin = 'anonymous'
+        audioElement.currentTime = state.activeTrack.currentTime
+        
+        const analyzer = await manager.createAnalyzer(audioElement)
+        if (!analyzer) {
+          throw new Error('Failed to create audio analyzer')
+        }
+
+        await audioElement.play()
+      } else {
+        // Resume existing connection
+        await connection.audioElement.play()
+      }
+
+      set(audioContextStateAtom, {
+        ...state,
+        activeTrack: {
+          ...state.activeTrack,
+          isPlaying: true
+        }
+      })
+
+      devLog('Track resumed successfully', {
+        prefix: 'audio-context',
+        level: 'debug'
+      }, {
+        currentTime: state.activeTrack.currentTime,
+        duration: state.activeTrack.duration
+      })
+    } catch (error) {
+      devLog('Failed to resume track', {
+        prefix: 'audio-context',
+        level: 'error'
+      }, { error })
+      throw error
+    }
+  }
+)
+
+export const seekTrackAtom = atom(
+  null,
+  async (get, set, time: number) => {
+    const state = get(audioContextStateAtom)
+    const manager = AudioContextManager.getInstance()
+    
+    if (state.activeTrack) {
+      try {
+        // Get the current connection
+        const connection = Array.from(manager.getState().activeConnections.values())
+          .find(conn => conn.audioElement.src === state.activeTrack?.url)
+
+        if (!connection) {
+          // If no connection exists, create a new one
+          const audioElement = new Audio(state.activeTrack.url)
+          audioElement.crossOrigin = 'anonymous'
+          audioElement.currentTime = time
+          
+          const analyzer = await manager.createAnalyzer(audioElement)
+          if (!analyzer) {
+            throw new Error('Failed to create audio analyzer')
+          }
+
+          if (state.activeTrack.isPlaying) {
+            await audioElement.play()
+          }
+        } else {
+          // Update existing connection
+          connection.audioElement.currentTime = time
+          if (state.activeTrack.isPlaying) {
+            await connection.audioElement.play()
+          }
+        }
+
+        set(audioContextStateAtom, {
+          ...state,
+          activeTrack: {
+            ...state.activeTrack,
+            currentTime: time
+          }
+        })
+
+        devLog('Track seeked successfully', {
+          prefix: 'audio-context',
+          level: 'debug'
+        }, {
+          time,
+          isPlaying: state.activeTrack.isPlaying
+        })
+      } catch (error) {
+        devLog('Failed to seek track', {
+          prefix: 'audio-context',
+          level: 'error'
+        }, { error })
+        set(audioContextStateAtom, {
+          ...state,
+          error: error as Error
+        })
+      }
+    }
+  }
+)
+
+export const setVolumeAtom = atom(
+  null,
+  async (get, set, volume: number) => {
+    const state = get(audioContextStateAtom)
+    const manager = AudioContextManager.getInstance()
+    
+    if (state.activeTrack) {
+      await manager.setVolume(volume)
+      set(audioContextStateAtom, {
+        ...state,
+        activeTrack: {
+          ...state.activeTrack,
+          volume
+        }
+      })
+
+      devLog('Volume updated', {
+        prefix: 'audio-context',
+        level: 'debug'
+      }, { volume })
     }
   }
 )
@@ -61,45 +357,18 @@ export const initializeAudioContextAtom = atom(
 export const cleanupAudioContextAtom = atom(
   null,
   async (get, set) => {
-    const connections = get(activeConnectionsAtom)
-    const audioContext = get(audioContextAtom)
+    const manager = AudioContextManager.getInstance()
+    manager.cleanup()
     
-    // Disconnect all active connections
-    for (const [id, connection] of connections.entries()) {
-      try {
-        connection.source.disconnect()
-        connection.gainNode.disconnect()
-        connection.analyzer.disconnect()
-        connections.delete(id)
-        
-        devLog('Disconnected audio analyzer', {
-          prefix: 'audio-context',
-          level: 'info'
-        }, { id })
-      } catch (error) {
-        devLog('Failed to disconnect audio analyzer', {
-          prefix: 'audio-context',
-          level: 'error'
-        }, { error, id })
-      }
-    }
+    set(audioContextStateAtom, {
+      isInitialized: false,
+      error: null,
+      activeTrack: null
+    })
 
-    // Close audio context if it exists
-    if (audioContext) {
-      try {
-        await audioContext.close()
-      } catch (error) {
-        devLog('Failed to close AudioContext', {
-          prefix: 'audio-context',
-          level: 'error'
-        }, { error })
-      }
-    }
-
-    // Reset all state
-    set(audioContextAtom, null)
-    set(activeConnectionsAtom, new Map())
-    set(isAudioContextInitializedAtom, false)
-    set(audioContextErrorAtom, null)
+    devLog('Audio context cleaned up', {
+      prefix: 'audio-context',
+      level: 'info'
+    })
   }
 ) 

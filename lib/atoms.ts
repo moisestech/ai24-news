@@ -59,13 +59,17 @@ export const newsHistoryWithStatusAtom = atom((get) => {
   const newsHistory = get(newsHistoryAtom)
   const imageGeneration = get(imageGenerationAtom)
 
-  return newsHistory.map(news => ({
-    ...news,
-    isGenerating: imageGeneration.currentNewsId === news.id && imageGeneration.loading,
-    isUploading: imageGeneration.currentNewsId === news.id && imageGeneration.uploading,
-    generationError: imageGeneration.currentNewsId === news.id ? imageGeneration.error : null,
-    status: imageGeneration.currentNewsId === news.id ? imageGeneration.status : 'idle'
-  }))
+  return newsHistory.map(news => {
+    const isCurrentNews = imageGeneration.currentNewsId === news.id
+    return {
+      ...news,
+      image_url: isCurrentNews ? imageGeneration.imageUrl || news.image_url : news.image_url,
+      isGenerating: isCurrentNews && imageGeneration.loading,
+      isUploading: isCurrentNews && imageGeneration.uploading,
+      generationError: isCurrentNews ? imageGeneration.error : null,
+      status: isCurrentNews ? imageGeneration.status : 'idle'
+    }
+  })
 })
 
 export const newsHistoryAtom = atom<NewsHistoryItem[]>([])

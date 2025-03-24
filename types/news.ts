@@ -8,14 +8,11 @@ export interface NewsItem {
   source_url: string
   url: string
   published_at: string
-  image_url?: string
   audio_url?: string
   audio_alignment?: {
-    characters: Array<{
-      char: string
-      start: number
-      end: number
-    }>
+    characters: string[]
+    character_start_times_seconds: number[]
+    character_end_times_seconds: number[]
   }
   art_style: ArtStyleKey
   prompt?: string
@@ -147,11 +144,9 @@ export interface NewsHistoryItem extends NewsItem {
   id: string
   audio_url?: string
   audio_alignment?: {
-    characters: Array<{
-      char: string
-      start: number
-      end: number
-    }>
+    characters: string[]
+    character_start_times_seconds: number[]
+    character_end_times_seconds: number[]
   }
   prompt?: string
 }

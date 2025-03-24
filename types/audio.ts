@@ -16,13 +16,17 @@ export interface AudioState {
 }
 
 export interface AudioPlayerProps {
+  newsId: string
   headline: string
-  audioUrl: string | null
-  alignment: AudioAlignment | null
+  initialAudioUrl?: string | null
+  initialAlignment?: AudioAlignment | null
   onPlay?: () => void
   onPause?: () => void
   onEnded?: () => void
   onError?: (error: Error) => void
+  onTimeUpdate?: (time: number) => void
+  onDuration?: (duration: number) => void
+  onLoading?: (loading: boolean) => void
 }
 
 export interface AudioGenerationState {

@@ -1,14 +1,18 @@
 import { devLog } from '@/lib/utils/log'
 
+interface AudioConnection {
+  analyzer: AnalyserNode
+  dataArray: Uint8Array
+  source: MediaElementAudioSourceNode
+  gainNode: GainNode
+  audioElement: HTMLAudioElement
+}
+
 interface AudioContextState {
   isInitialized: boolean
   error: Error | null
-  activeConnections: Map<string, {
-    analyzer: AnalyserNode
-    dataArray: Uint8Array
-    source: MediaElementAudioSourceNode
-    gainNode: GainNode
-  }>
+  activeConnections: Map<string, AudioConnection>
+  currentVolume: number
 }
 
 class AudioContextManager {
@@ -17,7 +21,8 @@ class AudioContextManager {
   private state: AudioContextState = {
     isInitialized: false,
     error: null,
-    activeConnections: new Map()
+    activeConnections: new Map(),
+    currentVolume: 1
   }
   private elementUpdateCallbacks: Set<(element: HTMLAudioElement) => void> = new Set()
   private initializationInProgress: Map<string, Promise<void>> = new Map()
@@ -160,7 +165,13 @@ class AudioContextManager {
         const gainNode = this.audioContext.createGain()
         const analyzer = this.audioContext.createAnalyser()
         analyzer.fftSize = 256
+        analyzer.smoothingTimeConstant = 0.8
+        analyzer.minDecibels = -90
+        analyzer.maxDecibels = -10
         const dataArray = new Uint8Array(analyzer.frequencyBinCount)
+
+        // Set initial volume
+        gainNode.gain.value = this.state.currentVolume
 
         // Connect nodes
         source.connect(gainNode)
@@ -172,7 +183,8 @@ class AudioContextManager {
           analyzer,
           dataArray,
           source,
-          gainNode
+          gainNode,
+          audioElement
         })
 
         devLog('Audio analyzer created successfully', {
@@ -257,6 +269,13 @@ class AudioContextManager {
     }
   }
 
+  async setVolume(volume: number): Promise<void> {
+    this.state.currentVolume = volume
+    this.state.activeConnections.forEach(connection => {
+      connection.gainNode.gain.value = volume
+    })
+  }
+
   cleanup(): void {
     // Disconnect all active connections
     this.state.activeConnections.forEach((connection, src) => {
@@ -284,7 +303,8 @@ class AudioContextManager {
     this.state = {
       isInitialized: false,
       error: null,
-      activeConnections: new Map()
+      activeConnections: new Map(),
+      currentVolume: 1
     }
 
     // Clear callbacks and initialization tracking
