@@ -124,7 +124,7 @@ export const NEWS_API_CONFIG = {
   baseUrl: 'https://api.mediastack.com/v1',
   defaultLimit: 25,
   maxLimit: 100,
-  defaultLanguage: 'en' as NewsLanguage,
+  defaultLanguage: ['en'] as NewsLanguage[],
   defaultCountries: ['us', 'gb'] as NewsCountry[],
   defaultCategories: ['general'] as NewsCategory[]
 } 
