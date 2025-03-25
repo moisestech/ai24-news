@@ -373,3 +373,119 @@ const measurePerformance = (name: string) => {
 - Visual regression testing
 - Performance benchmarking
 - Security scanning 
+
+## ❓ Frequently Asked Questions
+
+<details>
+<summary><strong>Why isn't my audio playing in Safari?</strong></summary>
+
+Safari has stricter autoplay policies. To fix this:
+
+1. Ensure audio playback is initiated by a user action (click, tap)
+2. Set `<audio>` element with `playsInline muted` attributes initially
+3. Add proper CORS headers to audio files
+4. Check Safari console for specific errors
+
+```typescript
+// Example fix
+const startAudio = () => {
+  const audio = new Audio(url);
+  audio.playsInline = true;
+  audio.muted = true; // Start muted
+  
+  // Unmute after user interaction
+  userInteractionPromise.then(() => {
+    audio.muted = false;
+  });
+  
+  return audio;
+};
+```
+</details>
+
+<details>
+<summary><strong>How do I fix alignment data issues?</strong></summary>
+
+If you're experiencing misalignment between audio and highlighted text:
+
+1. Verify alignment data format matches expected schema
+2. Check for empty or null values in character arrays
+3. Ensure start times are always <= end times
+4. Validate total duration matches audio file length
+
+```typescript
+// Validation helper
+const validateAlignment = (alignment) => {
+  if (!alignment?.characters?.length) return false;
+  
+  // Check for invalid times
+  return alignment.characters.every((char, i) => {
+    const start = alignment.character_start_times_seconds[i];
+    const end = alignment.character_end_times_seconds[i];
+    return start <= end;
+  });
+};
+```
+</details>
+
+<details>
+<summary><strong>What's the best way to debug audio visualization issues?</strong></summary>
+
+For audio visualization problems:
+
+1. Check browser console for Web Audio API errors
+2. Verify `AudioContext` is properly initialized after user interaction
+3. Inspect analyzer node configuration (FFT size, smoothing)
+4. Use `console.log()` to output frequency data
+
+```typescript
+// Debug helper
+const debugAnalyzer = (analyzerNode, dataArray) => {
+  console.log('Analyzer FFT size:', analyzerNode.fftSize);
+  console.log('Data array sample:', dataArray.slice(0, 5));
+  
+  // Check if data is changing
+  setInterval(() => {
+    analyzerNode.getByteFrequencyData(dataArray);
+    console.log('Peak frequency:', Math.max(...Array.from(dataArray)));
+  }, 1000);
+};
+```
+</details>
+
+<details>
+<summary><strong>How do I handle ElevenLabs API rate limits?</strong></summary>
+
+To handle API rate limiting:
+
+1. Implement exponential backoff for retries
+2. Add request queuing for high-volume scenarios
+3. Cache generated audio when possible
+4. Monitor usage with Supabase analytics
+
+```typescript
+// Example backoff implementation
+const withBackoff = async (fn, maxRetries = 3) => {
+  let retries = 0;
+  
+  while (retries < maxRetries) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error.status === 429) {
+        const delay = Math.pow(2, retries) * 1000;
+        console.log(`Rate limited. Retrying in ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        retries++;
+      } else {
+        throw error;
+      }
+    }
+  }
+  
+  throw new Error('Max retries exceeded');
+};
+```
+</details>
+
+--- 

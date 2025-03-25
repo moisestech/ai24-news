@@ -4,92 +4,262 @@
 
 ## System Architecture
 
+### High-Level Overview
+
 ```mermaid
 graph TD
     subgraph Client["Client Layer"]
         direction TB
-        A[Next.js App Router]:::nextjs
-        B[Pages]:::nextjs
-        C[Components]:::components
-        D[Custom Hooks]:::hooks
-        E[Services]:::services
-        
-        A --> B
-        B --> C
-        C --> D
-        D --> E
-    end
-
-    subgraph Server["Server Layer"]
-        direction TB
-        F[API Routes]:::api
-        G[External Services]:::services
-        H[ElevenLabs API]:::external
-        I[TogetherAI API]:::external
-        J[Supabase]:::supabase
-        
-        F --> G
-        G --> H
-        G --> I
-        G --> J
-    end
-
-    subgraph Database["Data Layer"]
-        direction TB
-        J --> K[PostgreSQL]:::supabase
-        J --> L[Storage]:::supabase
-    end
-
-    C --> F
-```
-
-## Component Architecture
-
-```mermaid
-graph TD
-    subgraph UI["UI Layer"]
-        direction TB
-        A[HomePage]:::components
-        B[NewsCard]:::components
-        C[FetchNewsButton]:::components
-        D[NewsHistoryList]:::components
-        E[NewsImage]:::components
-        F[AudioPlayer]:::components
+        A[UI Components]:::component
+        B[State Management]:::state
+        C[Audio System]:::audio
+        D[API Client]:::api
         
         A --> B
         A --> C
-        A --> D
-        B --> E
-        B --> F
-    end
-
-    subgraph State["State Management"]
-        direction TB
-        G[Global State]:::state
-        H[News State]:::state
-        I[Media State]:::state
-        J[User State]:::state
-        
-        G --> H
-        G --> I
-        G --> J
+        C --> B
+        D --> C
     end
 
     subgraph Services["Service Layer"]
         direction TB
-        K[MediaService]:::services
-        L[PromptService]:::services
-        M[ImageService]:::services
-        N[AudioService]:::services
+        E[Audio Service]:::service
+        F[Generation Service]:::service
+        G[Storage Service]:::service
         
-        K --> L
-        K --> M
-        K --> N
+        E --> H[Web Audio API]
+        F --> I[ElevenLabs API]
+        G --> J[Supabase]
     end
 
-    B --> G
-    C --> G
-    D --> G
+    subgraph State["State Management"]
+        direction TB
+        K[Audio State]:::state
+        L[Generation State]:::state
+        M[UI State]:::state
+        
+        K --> N[Global State]
+        L --> N
+        M --> N
+    end
+```
+
+### Audio System Architecture
+
+#### 1. Core Components
+
+```mermaid
+graph TD
+    subgraph Audio["Audio System"]
+        direction TB
+        A[AudioContextManager]:::core
+        B[AudioPlayer]:::component
+        C[AudioWaveform]:::component
+        D[AudioAnalyser]:::core
+        
+        A --> B
+        A --> C
+        A --> D
+        B --> D
+    end
+
+    subgraph State["Audio State"]
+        direction TB
+        E[Audio State Atoms]:::state
+        F[Generation State Atoms]:::state
+        G[UI State Atoms]:::state
+        
+        A --> E
+        B --> E
+        C --> E
+    end
+
+    subgraph Services["Audio Services"]
+        direction TB
+        H[Audio Service]:::service
+        I[Generation Service]:::service
+        J[Storage Service]:::service
+        
+        B --> H
+        H --> I
+        H --> J
+    end
+```
+
+#### 2. Data Flow
+
+```mermaid
+sequenceDiagram
+    participant UI as UI Layer
+    participant State as State Management
+    participant Audio as Audio System
+    participant Service as Services
+    participant Storage as Storage
+
+    UI->>State: User Action
+    State->>Audio: Update Audio State
+    Audio->>Service: Process Audio
+    Service->>Storage: Store/Retrieve Data
+    Storage-->>Service: Data Response
+    Service-->>Audio: Processed Result
+    Audio-->>State: Update State
+    State-->>UI: Update UI
+```
+
+### Component Architecture
+
+#### 1. Audio Components
+
+```typescript
+// Core audio components
+interface AudioSystem {
+  context: AudioContext
+  analyser: AnalyserNode
+  player: AudioPlayer
+  waveform: AudioWaveform
+}
+
+// State management
+interface AudioState {
+  isInitialized: boolean
+  error: Error | null
+  activeTrack: AudioTrack | null
+  availableTracks: Map<string, AudioTrack>
+}
+
+// Service layer
+interface AudioServices {
+  audio: AudioService
+  generation: GenerationService
+  storage: StorageService
+}
+```
+
+#### 2. State Management
+
+```typescript
+// Base state atoms
+const audioContextStateAtom = atom<AudioContextState>({
+  isInitialized: false,
+  error: null,
+  activeTrack: null,
+  availableTracks: new Map()
+})
+
+// Derived state atoms
+const isPlayingAtom = atom(
+  (get) => get(audioContextStateAtom).activeTrack?.isPlaying ?? false,
+  (get, set, isPlaying: boolean) => {
+    const state = get(audioContextStateAtom)
+    if (state.activeTrack) {
+      set(audioContextStateAtom, {
+        ...state,
+        activeTrack: { ...state.activeTrack, isPlaying }
+      })
+    }
+  }
+)
+```
+
+### Service Architecture
+
+#### 1. Audio Service
+
+```typescript
+class AudioService {
+  constructor(
+    private context: AudioContext,
+    private analyser: AnalyserNode,
+    private storage: StorageService
+  ) {}
+
+  async play(track: AudioTrack): Promise<void> {
+    // Implementation
+  }
+
+  async pause(): Promise<void> {
+    // Implementation
+  }
+
+  async seek(time: number): Promise<void> {
+    // Implementation
+  }
+}
+```
+
+#### 2. Generation Service
+
+```typescript
+class GenerationService {
+  constructor(
+    private elevenLabs: ElevenLabsService,
+    private storage: StorageService
+  ) {}
+
+  async generateAudio(options: AudioGenerationOptions): Promise<AudioGenerationResult> {
+    // Implementation
+  }
+}
+```
+
+### Error Handling
+
+```typescript
+// Error hierarchy
+class AudioError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AudioError'
+  }
+}
+
+class AudioContextError extends AudioError {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AudioContextError'
+  }
+}
+
+class GenerationError extends AudioError {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GenerationError'
+  }
+}
+
+// Error handling
+function handleAudioError(error: unknown): never {
+  if (error instanceof AudioContextError) {
+    // Handle context errors
+  } else if (error instanceof GenerationError) {
+    // Handle generation errors
+  } else {
+    // Handle general errors
+  }
+  throw error
+}
+```
+
+### Testing Strategy
+
+```typescript
+// Unit tests
+describe('AudioService', () => {
+  it('should initialize audio context', () => {
+    // Test implementation
+  })
+
+  it('should handle playback', () => {
+    // Test implementation
+  })
+})
+
+// Integration tests
+describe('Audio System Integration', () => {
+  it('should coordinate between components', () => {
+    // Test implementation
+  })
+})
 ```
 
 ## Data Flow
@@ -123,13 +293,13 @@ sequenceDiagram
 The application uses a service-based architecture to handle complex operations:
 
 | Service | Purpose | Key Features |
-|---------|---------|--------------|
-| MediaService | Orchestrates media generation | - Progress tracking<br>- Error handling<br>- Resource management |
-| PromptService | Handles AI prompt generation | - Style validation<br>- Context management<br>- Output formatting |
-| ImageService | Manages image generation | - Format optimization<br>- Storage integration<br>- Caching |
-| AudioService | Handles audio generation | - Streaming support<br>- Alignment data<br>- Format conversion |
+|:-------:|:--------|:-------------|
+| 🔄 **MediaService** | Orchestrates media generation | • **Progress tracking**<br>• **Error handling**<br>• **Resource management** |
+| 🧠 **PromptService** | Handles AI prompt generation | • **Style validation**<br>• **Context management**<br>• **Output formatting** |
+| 🖼️ **ImageService** | Manages image generation | • **Format optimization**<br>• **Storage integration**<br>• **Caching** |
+| 🔊 **AudioService** | Handles audio generation | • **Streaming support**<br>• **Alignment data**<br>• **Format conversion** |
 
-Each service follows the Singleton pattern to ensure consistent state and resource management.
+> 💡 Each service follows the **Singleton pattern** to ensure consistent state and resource management.
 
 ### 2. State Management
 

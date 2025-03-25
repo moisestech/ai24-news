@@ -1,14 +1,29 @@
-# ElevenLabs Integration
+# 🎙️ ElevenLabs Integration
 
-This document outlines how we integrate and use ElevenLabs' Text-to-Speech API in our application, including our custom audio visualization and transcript animation features.
+## 📋 Quick Reference
+
+| Component | Purpose | Documentation Link |
+|:----------|:--------|:-------------------|
+| **ElevenLabsService** | Core service for TTS generation | [Service Architecture](#api-integration) |
+| **AudioAlignment** | Character timing data | [Audio Alignment System](#audio-visualization) |
+| **AnimatedTranscript** | Text highlighting component | [Transcript Animation](#transcript-animation) |
+
+```typescript
+// Quick implementation example
+const { generateAudio } = useAudioGeneration();
+
+// Generate audio with default voice
+const result = await generateAudio("Hello, world!");
+
+// Access alignment data
+const { audioUrl, alignment } = result;
+```
+
+---
 
 ## Overview
 
-We use ElevenLabs' API to generate high-quality speech from text, with a focus on:
-1. Character-level timing accuracy
-2. Real-time audio visualization
-3. Synchronized transcript highlighting
-4. Efficient audio storage and delivery
+This document outlines how we integrate and use ElevenLabs' Text-to-Speech API in our application, including our custom audio visualization and transcript animation features.
 
 ## API Integration
 

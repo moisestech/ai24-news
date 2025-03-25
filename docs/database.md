@@ -4,36 +4,325 @@
 
 ## Overview
 
+This document outlines the database schema and storage patterns used in the application, with a focus on audio data storage.
+
+## Audio Data Storage
+
+### Schema
+
+```sql
+-- Audio tracks table
+CREATE TABLE audio_tracks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  url TEXT NOT NULL,
+  text TEXT NOT NULL,
+  duration FLOAT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  metadata JSONB DEFAULT '{}'::jsonb,
+  CONSTRAINT valid_duration CHECK (duration > 0),
+  CONSTRAINT valid_url CHECK (url ~ '^https?://')
+);
+
+-- Audio alignments table
+CREATE TABLE audio_alignments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  track_id UUID REFERENCES audio_tracks(id) ON DELETE CASCADE,
+  characters TEXT[] NOT NULL,
+  start_times FLOAT[] NOT NULL,
+  end_times FLOAT[] NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  CONSTRAINT valid_alignment CHECK (
+    array_length(characters, 1) = array_length(start_times, 1) AND
+    array_length(characters, 1) = array_length(end_times, 1)
+  ),
+  CONSTRAINT valid_times CHECK (
+    array_position(end_times, array_min(end_times)) >= array_position(start_times, array_min(start_times))
+  )
+);
+
+-- Audio generation history
+CREATE TABLE audio_generation_history (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  track_id UUID REFERENCES audio_tracks(id) ON DELETE CASCADE,
+  voice_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  settings JSONB DEFAULT '{}'::jsonb,
+  status TEXT NOT NULL,
+  error TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  CONSTRAINT valid_status CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
+);
+
+-- Indexes for better query performance
+CREATE INDEX idx_audio_tracks_created_at ON audio_tracks(created_at);
+CREATE INDEX idx_audio_alignments_track_id ON audio_alignments(track_id);
+CREATE INDEX idx_audio_generation_history_track_id ON audio_generation_history(track_id);
+CREATE INDEX idx_audio_generation_history_status ON audio_generation_history(status);
+
+-- Example data
+INSERT INTO audio_tracks (url, text, duration, metadata)
+VALUES (
+    'https://storage.example.com/audio/123.mp3',
+    'Hello, world!',
+    2.5,
+    '{"modelId": "eleven-multilingual-v2", "voiceId": "voice-123"}'
+);
+
+INSERT INTO audio_alignments (track_id, characters, start_times, end_times)
+VALUES (
+    '123e4567-e89b-12d3-a456-426614174000',
+    ARRAY['H', 'e', 'l', 'l', 'o'],
+    ARRAY[0.0, 0.1, 0.2, 0.3, 0.4],
+    ARRAY[0.1, 0.2, 0.3, 0.4, 0.5]
+);
+```typescript
+// Audio track model
+interface AudioTrack {
+  id: string
+  url: string
+  text: string
+  duration: number
+  createdAt: Date
+  updatedAt: Date
+  metadata: {
+    modelId?: string
+    voiceId?: string
+    [key: string]: unknown
+  }
+}
+
+// Audio alignment model
+interface AudioAlignment {
+  id: string
+  trackId: string
+  characters: string[]
+  startTimes: number[]
+  endTimes: number[]
+  createdAt: Date
+  updatedAt: Date
+}
+
+// Generation history model
+interface AudioGenerationHistory {
+  id: string
+  trackId: string
+  voiceId: string
+  modelId: string
+  settings: {
+    stability?: number
+    similarityBoost?: number
+    style?: number
+    useSpeakerBoost?: boolean
+    [key: string]: unknown
+  }
+  status: 'pending' | 'completed' | 'failed'
+  error?: string
+  createdAt: Date
+  updatedAt: Date
+}
+```
+
+### Storage Architecture
+
 ```mermaid
 graph TD
-    subgraph Database["Database Architecture"]
+    subgraph Database["Database Layer"]
         direction TB
-        A[Tables]:::table
-        B[Relationships]:::relation
-        C[Indexes]:::index
-        D[Triggers]:::trigger
+        A[Audio Tracks]:::table
+        B[Audio Alignments]:::table
+        C[Generation History]:::table
         
-        A --> E[Data Model]
-        B --> E
-        C --> E
+        A --> B
+        A --> C
+    end
+
+    subgraph Storage["Storage Layer"]
+        direction TB
+        D[Audio Files]:::storage
+        E[Cache]:::storage
+        F[Temp Storage]:::storage
+        
+        A --> D
         D --> E
+        D --> F
     end
 
-    subgraph Tables["Database Tables"]
-        direction LR
-        F[news_history]:::table
-        G[media_assets]:::table
-        H[users]:::table
-        I[subscriptions]:::table
+    subgraph Services["Service Layer"]
+        direction TB
+        G[Database Service]:::service
+        H[Storage Service]:::service
+        I[Cache Service]:::service
+        
+        G --> A
+        G --> B
+        G --> C
+        H --> D
+        I --> E
     end
+```
 
-    subgraph Relations["Table Relationships"]
-        direction LR
-        J[One-to-Many]:::relation
-        K[Many-to-One]:::relation
-        L[One-to-One]:::relation
-        M[Many-to-Many]:::relation
-    end
+### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant DB as Database
+    participant Storage as Storage
+    participant Cache as Cache
+
+    App->>DB: Create Track Record
+    App->>Storage: Upload Audio File
+    Storage-->>App: File URL
+    App->>DB: Update Track URL
+    App->>DB: Store Alignment
+    App->>Cache: Cache Audio Data
+    App->>DB: Record Generation History
+```
+
+### Storage Service
+
+```typescript
+class StorageService {
+  constructor(
+    private supabase: SupabaseClient,
+    private cache: CacheService
+  ) {}
+
+  async storeAudio(
+    audioData: ArrayBuffer,
+    metadata: AudioTrackMetadata
+  ): Promise<AudioTrack> {
+    // Upload to Supabase Storage
+    const { data: fileData, error: uploadError } = await this.supabase.storage
+      .from('audio')
+      .upload(`${metadata.id}.mp3`, audioData)
+
+    if (uploadError) throw new StorageError(uploadError.message)
+
+    // Create database record
+    const { data: track, error: dbError } = await this.supabase
+      .from('audio_tracks')
+      .insert({
+        id: metadata.id,
+        url: fileData.path,
+        text: metadata.text,
+        duration: metadata.duration,
+        metadata: metadata
+      })
+      .select()
+      .single()
+
+    if (dbError) throw new DatabaseError(dbError.message)
+
+    // Cache audio data
+    await this.cache.set(`audio:${track.id}`, audioData)
+
+    return track
+  }
+
+  async storeAlignment(
+    trackId: string,
+    alignment: AudioAlignment
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('audio_alignments')
+      .insert({
+        trackId,
+        characters: alignment.characters,
+        startTimes: alignment.startTimes,
+        endTimes: alignment.endTimes
+      })
+
+    if (error) throw new DatabaseError(error.message)
+  }
+}
+```
+
+### Cache Management
+
+```typescript
+class CacheService {
+  private cache: Map<string, unknown>
+  private ttl: number
+
+  constructor(ttl: number = 3600000) {
+    this.cache = new Map()
+    this.ttl = ttl
+  }
+
+  async get<T>(key: string): Promise<T | null> {
+    const item = this.cache.get(key)
+    if (!item) return null
+
+    const { value, timestamp } = item as { value: T; timestamp: number }
+    if (Date.now() - timestamp > this.ttl) {
+      this.cache.delete(key)
+      return null
+    }
+
+    return value
+  }
+
+  async set(key: string, value: unknown): Promise<void> {
+    this.cache.set(key, {
+      value,
+      timestamp: Date.now()
+    })
+  }
+}
+```
+
+### Error Handling
+
+```typescript
+class DatabaseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DatabaseError'
+  }
+}
+
+class StorageError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'StorageError'
+  }
+}
+
+async function handleStorageError(error: unknown): Promise<never> {
+  if (error instanceof DatabaseError) {
+    // Handle database errors
+  } else if (error instanceof StorageError) {
+    // Handle storage errors
+  }
+  throw error
+}
+```
+
+### Testing
+
+```typescript
+describe('StorageService', () => {
+  it('should store audio data', async () => {
+    const service = new StorageService(mockSupabase, mockCache)
+    const result = await service.storeAudio(
+      new ArrayBuffer(0),
+      mockMetadata
+    )
+    expect(result).toBeDefined()
+    expect(result.url).toBeDefined()
+  })
+
+  it('should handle storage errors', async () => {
+    const service = new StorageService(mockSupabase, mockCache)
+    await expect(
+      service.storeAudio(new ArrayBuffer(0), mockMetadata)
+    ).rejects.toThrow(StorageError)
+  })
+})
 ```
 
 ## Schema Design
@@ -328,4 +617,15 @@ graph TD
 > - Constraints: Pink (#EC4899)
 > - Performance: Yellow (#F59E0B)
 > - Error: Red (#EF4444)
-> - Success: Green (#10B981) 
+> - Success: Green (#10B981)
+
+## 📚 Related Documentation
+
+- [Audio Architecture](./audio-architecture.md) - Audio system architecture and components
+- [API Integration](./api-integration.md) - External API integration details
+- [State Management](./state-management.md) - State management patterns
+- [Media Generation](./media-generation.md) - Media generation workflow
+
+---
+
+*Last updated: May 2023* 

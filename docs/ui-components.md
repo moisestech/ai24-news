@@ -4,44 +4,245 @@
 
 ## Overview
 
+This document outlines the UI components used in the application, with a focus on audio-related components and their interactions.
+
+## Audio Components
+
+### 1. AudioPlayer
+
+The main audio playback component that handles audio controls and visualization.
+
+```typescript
+interface AudioPlayerProps {
+  track: AudioTrack
+  onPlay?: () => void
+  onPause?: () => void
+  onSeek?: (time: number) => void
+  onVolumeChange?: (volume: number) => void
+}
+```
+
+#### Features
+- Play/pause controls
+- Time display and seeking
+- Volume control
+- Progress bar
+- Waveform visualization
+- Character-level highlighting
+
+### 2. AudioWaveform
+
+Visualizes the audio frequency data in real-time.
+
+```typescript
+interface AudioWaveformProps {
+  audioContext: AudioContext
+  analyser: AnalyserNode
+  isPlaying: boolean
+  currentTime: number
+  duration: number
+  onSeek: (time: number) => void
+}
+```
+
+#### Features
+- Real-time frequency visualization
+- Interactive seeking
+- Playback position indicator
+- Responsive design
+
+### 3. AnimatedTranscript
+
+Displays the text with character-level highlighting based on audio playback.
+
+```typescript
+interface AnimatedTranscriptProps {
+  text: string
+  alignment: AudioAlignment
+  currentTime: number
+  onWordClick?: (time: number) => void
+}
+```
+
+#### Features
+- Character-level highlighting
+- Word-level navigation
+- Smooth transitions
+- Responsive layout
+
+### 4. AudioGenerationForm
+
+Form component for generating new audio content.
+
+```typescript
+interface AudioGenerationFormProps {
+  onSubmit: (options: AudioGenerationOptions) => Promise<void>
+  onProgress?: (progress: GenerationProgress) => void
+}
+```
+
+#### Features
+- Text input
+- Voice selection
+- Model selection
+- Generation settings
+- Progress tracking
+
+### Component Architecture
+
 ```mermaid
 graph TD
-    subgraph UI["UI Architecture"]
+    subgraph Components["UI Components"]
         direction TB
-        A[Layout Components]:::layout
-        B[Feature Components]:::feature
-        C[Shared Components]:::shared
-        D[State Management]:::state
+        A[AudioPlayer]:::component
+        B[AudioWaveform]:::component
+        C[AnimatedTranscript]:::component
+        D[AudioGenerationForm]:::component
         
-        A --> E[Component Tree]
+        A --> B
+        A --> C
+        D --> A
+    end
+
+    subgraph State["State Management"]
+        direction TB
+        E[Audio State]:::state
+        F[Generation State]:::state
+        G[UI State]:::state
+        
+        A --> E
         B --> E
         C --> E
-        D --> E
+        D --> F
     end
 
-    subgraph Layout["Layout Components"]
-        direction LR
-        F[RootLayout]:::layout
-        G[Header]:::layout
-        H[Footer]:::layout
-        I[MainContent]:::layout
+    subgraph Services["Services"]
+        direction TB
+        H[Audio Service]:::service
+        I[Generation Service]:::service
+        
+        A --> H
+        D --> I
     end
+```
 
-    subgraph Feature["Feature Components"]
-        direction LR
-        J[NewsCard]:::feature
-        K[NewsImage]:::feature
-        L[AudioPlayer]:::feature
-        M[ProgressBar]:::feature
-    end
+### Component Interactions
 
-    subgraph Shared["Shared Components"]
-        direction LR
-        N[Button]:::shared
-        O[Card]:::shared
-        P[Input]:::shared
-        Q[Modal]:::shared
-    end
+```mermaid
+sequenceDiagram
+    participant User as User
+    participant Player as AudioPlayer
+    participant Waveform as AudioWaveform
+    participant Transcript as AnimatedTranscript
+    participant State as State Management
+
+    User->>Player: Play/Pause
+    Player->>State: Update Playback State
+    State->>Waveform: Update Visualization
+    State->>Transcript: Update Highlighting
+    
+    User->>Waveform: Seek
+    Waveform->>State: Update Current Time
+    State->>Transcript: Update Position
+    
+    User->>Transcript: Click Word
+    Transcript->>State: Update Current Time
+    State->>Player: Seek to Position
+```
+
+### Styling
+
+Components use a consistent styling system:
+
+```typescript
+const styles = {
+  container: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+    padding: '1rem',
+    borderRadius: '0.5rem',
+    backgroundColor: 'var(--background)',
+    boxShadow: 'var(--shadow)'
+  },
+  controls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem'
+  },
+  waveform: {
+    height: '100px',
+    width: '100%',
+    backgroundColor: 'var(--background-alt)',
+    borderRadius: '0.25rem'
+  },
+  transcript: {
+    fontFamily: 'var(--font-mono)',
+    lineHeight: '1.5',
+    padding: '1rem',
+    backgroundColor: 'var(--background-alt)',
+    borderRadius: '0.25rem'
+  }
+}
+```
+
+### Usage Example
+
+```typescript
+function AudioPlayerContainer() {
+  const { track, isPlaying, currentTime } = useAudioPlayer()
+  const { alignment } = useAudioAlignment()
+  
+  return (
+    <div className={styles.container}>
+      <AudioPlayer
+        track={track}
+        isPlaying={isPlaying}
+        currentTime={currentTime}
+      />
+      
+      <AudioWaveform
+        audioContext={audioContext}
+        analyser={analyser}
+        isPlaying={isPlaying}
+        currentTime={currentTime}
+        duration={track.duration}
+        onSeek={handleSeek}
+      />
+      
+      <AnimatedTranscript
+        text={track.text}
+        alignment={alignment}
+        currentTime={currentTime}
+        onWordClick={handleWordClick}
+      />
+    </div>
+  )
+}
+```
+
+### Testing
+
+```typescript
+describe('AudioPlayer', () => {
+  it('should render playback controls', () => {
+    render(<AudioPlayer track={mockTrack} />)
+    expect(screen.getByRole('button', { name: /play/i })).toBeInTheDocument()
+  })
+  
+  it('should update progress on playback', () => {
+    render(<AudioPlayer track={mockTrack} />)
+    const playButton = screen.getByRole('button', { name: /play/i })
+    fireEvent.click(playButton)
+    
+    // Simulate time update
+    act(() => {
+      jest.advanceTimersByTime(1000)
+    })
+    
+    expect(screen.getByText('0:01')).toBeInTheDocument()
+  })
+})
 ```
 
 ## Component Hierarchy

@@ -4,47 +4,228 @@
 
 ## Overview
 
+The application supports various types of media generation, including audio, images, and video. This document focuses on the audio generation system, particularly the integration with ElevenLabs for text-to-speech generation.
+
+## Audio Generation System
+
+### Architecture
+
 ```mermaid
 graph TD
-    subgraph Media["Media Generation"]
+    subgraph Client["Client Layer"]
         direction TB
-        A[Input]:::input
-        B[Processing]:::processing
-        C[Storage]:::storage
-        D[Delivery]:::delivery
+        A[useAudioGeneration Hook]:::hook
+        B[AudioGenerationForm]:::component
+        C[GenerationProgress]:::component
         
-        A --> B
-        B --> C
-        C --> D
+        A --> D[AudioService]
+        B --> A
+        C --> A
     end
 
-    subgraph Input["Input Layer"]
-        direction LR
-        E[News Text]:::input
-        F[Art Style]:::input
-        G[Voice Selection]:::input
+    subgraph Services["Service Layer"]
+        direction TB
+        D[AudioService]:::service
+        E[ElevenLabsService]:::service
+        F[StorageService]:::service
+        
+        D --> E
+        D --> F
     end
 
-    subgraph Processing["Processing Layer"]
-        direction LR
-        H[Image Generation]:::processing
-        I[Audio Generation]:::processing
-        J[Alignment]:::processing
+    subgraph External["External Services"]
+        direction TB
+        G[ElevenLabs API]:::api
+        H[Supabase Storage]:::storage
+        
+        E --> G
+        F --> H
     end
+```
 
-    subgraph Storage["Storage Layer"]
-        direction LR
-        K[Supabase Storage]:::storage
-        L[CDN]:::storage
-        M[Cache]:::storage
-    end
+### Core Components
 
-    subgraph Delivery["Delivery Layer"]
-        direction LR
-        N[Progressive Loading]:::delivery
-        O[Streaming]:::delivery
-        P[Optimization]:::delivery
-    end
+#### 1. Audio Generation Hook
+
+```typescript
+interface AudioGenerationOptions {
+  text: string
+  voiceId: string
+  modelId: string
+  stability?: number
+  similarityBoost?: number
+  style?: number
+  useSpeakerBoost?: boolean
+}
+
+interface AudioGenerationResult {
+  audioUrl: string
+  alignment: AudioAlignment
+  duration: number
+  metadata: {
+    modelId: string
+    voiceId: string
+    timestamp: string
+  }
+}
+```
+
+#### 2. ElevenLabs Service
+
+```typescript
+class ElevenLabsService {
+  private apiKey: string
+  private baseUrl: string
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey
+    this.baseUrl = 'https://api.elevenlabs.io/v1'
+  }
+
+  async generateSpeech(options: AudioGenerationOptions): Promise<{
+    audioData: ArrayBuffer
+    alignment: RawAudioAlignment
+  }> {
+    // Implementation details
+  }
+}
+```
+
+#### 3. Audio Service
+
+```typescript
+class AudioService {
+  constructor(
+    private elevenLabs: ElevenLabsService,
+    private storage: StorageService
+  ) {}
+
+  async generateAudio(options: AudioGenerationOptions): Promise<AudioGenerationResult> {
+    // Implementation details
+  }
+}
+```
+
+### Generation Flow
+
+```mermaid
+sequenceDiagram
+    participant UI as User Interface
+    participant Hook as useAudioGeneration
+    participant Service as AudioService
+    participant ElevenLabs as ElevenLabs API
+    participant Storage as Supabase Storage
+
+    UI->>Hook: Start Generation
+    Hook->>Service: generateAudio(options)
+    Service->>ElevenLabs: generateSpeech(options)
+    ElevenLabs-->>Service: Audio Data + Alignment
+    Service->>Service: Process Alignment
+    Service->>Storage: Store Audio
+    Storage-->>Service: Audio URL
+    Service-->>Hook: Generation Result
+    Hook-->>UI: Update UI
+```
+
+### Alignment Processing
+
+The audio generation process includes character-level alignment:
+
+> ⚠️ **IMPORTANT**: The alignment data is critical for synchronized text highlighting and must be properly stored and processed.
+
+1. **Raw Alignment** (from ElevenLabs):
+```typescript
+{
+  characters: [
+    { char: "H", start: 0.0, end: 0.1 },
+    { char: "e", start: 0.1, end: 0.2 }
+  ]
+}
+```
+
+2. **Normalized Alignment**:
+```typescript
+{
+  characters: ["H", "e"],
+  character_start_times_seconds: [0.0, 0.1],
+  character_end_times_seconds: [0.1, 0.2]
+}
+```
+
+> 📝 **Note**: Our application always transforms between these formats automatically, so you don't need to handle conversion manually.
+
+### Error Handling
+
+```typescript
+try {
+  const result = await generateAudio(options)
+  return result
+} catch (error) {
+  if (error instanceof ElevenLabsError) {
+    // Handle API-specific errors
+  } else if (error instanceof StorageError) {
+    // Handle storage errors
+  } else {
+    // Handle general errors
+  }
+  throw error
+}
+```
+
+### Progress Tracking
+
+Generation progress is tracked through a callback system:
+
+```typescript
+interface GenerationProgress {
+  status: 'idle' | 'generating' | 'processing' | 'complete' | 'error'
+  progress: number
+  message: string
+  error?: Error
+}
+
+const [progress, setProgress] = useState<GenerationProgress>({
+  status: 'idle',
+  progress: 0,
+  message: ''
+})
+```
+
+### Storage Management
+
+Generated audio is stored in Supabase with the following structure:
+
+```typescript
+interface StoredAudio {
+  id: string
+  url: string
+  alignment: AudioAlignment
+  metadata: {
+    modelId: string
+    voiceId: string
+    timestamp: string
+  }
+}
+```
+
+### Usage Example
+
+```typescript
+const { generateAudio, progress } = useAudioGeneration()
+
+const handleGenerate = async () => {
+  try {
+    const result = await generateAudio({
+      text: "Hello, world!",
+      voiceId: "voice-id",
+      modelId: "model-id"
+    })
+    
+    // Handle successful generation
+  } catch (error) {
+    // Handle error
+  }
+}
 ```
 
 ## Process Flow
@@ -70,6 +251,11 @@ sequenceDiagram
     Storage->>CDN: Cache Audio
     Media-->>UI: Update Progress
     UI-->>User: Display Results
+
+    Note over User,CDN: Generation Flow
+    Note over User,UI: User Interface
+    Note over UI,Media: Application Logic
+    Note over Media,CDN: External Services
 ```
 
 ## Service Architecture
@@ -108,31 +294,59 @@ classDiagram
         -handleErrors()
     }
 
-    MediaService --> ImageService
-    MediaService --> AudioService
-    MediaService --> StorageService
-    ImageService --> StorageService
-    AudioService --> StorageService
+    MediaService --> ImageService : uses
+    MediaService --> AudioService : uses
+    MediaService --> StorageService : uses
+    ImageService --> StorageService : uses
+    AudioService --> StorageService : uses
+
+    class MediaService {
+        <<interface>>
+    }
+
+    class ImageService {
+        <<interface>>
+    }
+
+    class AudioService {
+        <<interface>>
+    }
+
+    class StorageService {
+        <<interface>>
+    }
 ```
 
 ## Progress Tracking
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PromptGeneration
-    PromptGeneration --> ImageGeneration
-    ImageGeneration --> AudioGeneration
-    AudioGeneration --> Storage
-    Storage --> [*]
+    [*] --> PromptGeneration: Start
+    PromptGeneration --> ImageGeneration: Success
+    ImageGeneration --> AudioGeneration: Success
+    AudioGeneration --> Storage: Success
+    Storage --> [*]: Success
     
     PromptGeneration --> Error: Failed
     ImageGeneration --> Error: Failed
     AudioGeneration --> Error: Failed
     Storage --> Error: Failed
     
-    Error --> Retry
+    Error --> Retry: Attempt Recovery
     Retry --> [*]: Success
     Retry --> Error: Failed
+
+    state Error {
+        [*] --> LogError
+        LogError --> NotifyUser
+        NotifyUser --> [*]
+    }
+
+    state Retry {
+        [*] --> Backoff
+        Backoff --> Attempt
+        Attempt --> [*]
+    }
 ```
 
 ## Technical Implementation
